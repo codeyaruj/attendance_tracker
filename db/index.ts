@@ -11,6 +11,7 @@ import type {
   TimetableSlot,
   UploadedTimetableReference,
 } from "@/types/domain";
+import { storedBinarySize } from "@/lib/stored-binary";
 
 import {
   checkDatabaseHealth,
@@ -254,7 +255,7 @@ export class AttendSafeRepository {
   saveUploadReference(
     reference: UploadedTimetableReference,
   ): Promise<UploadedTimetableReference> {
-    if (reference.size !== reference.blob.size) {
+    if (reference.size !== storedBinarySize(reference.blob)) {
       throw new Error("Upload metadata does not match the stored file size.");
     }
     return createRepositories(this.database()).uploadedTimetableReferences.put(
@@ -268,7 +269,7 @@ export class AttendSafeRepository {
     const reference: UploadedTimetableReference = {
       ...input,
       id: input.id ?? createEntityId(),
-      size: input.blob.size,
+      size: storedBinarySize(input.blob),
       ...entityTimestamps(),
     };
     await this.saveUploadReference(reference);

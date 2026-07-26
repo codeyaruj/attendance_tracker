@@ -1,4 +1,5 @@
 import type { UploadedTimetableReference } from "@/types/domain";
+import { storedBinaryBytes, storedBinarySize } from "@/lib/stored-binary";
 import { BACKUP_LIMITS } from "@/lib/validation/backup-limits";
 import { BackupError } from "./backup-errors";
 import type { SerializedUploadedTimetableReference } from "./schema";
@@ -45,11 +46,6 @@ function base64ToBytes(base64: string): Uint8Array {
   return output;
 }
 
-async function readBlobBytes(blob: Blob): Promise<Uint8Array> {
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  return bytes;
-}
-
 export async function serializeUploadReferences(
   references: readonly UploadedTimetableReference[],
 ): Promise<SerializedUploadedTimetableReference[]> {
@@ -67,7 +63,7 @@ export async function serializeUploadReferences(
       );
     }
     if (
-      reference.size !== reference.blob.size ||
+      reference.size !== storedBinarySize(reference.blob) ||
       reference.size > BACKUP_LIMITS.maxEmbeddedBlobBytes
     ) {
       throw new BackupError(
@@ -82,7 +78,7 @@ export async function serializeUploadReferences(
         "Uploaded timetable sources exceed the total backup attachment limit.",
       );
     }
-    const bytes = await readBlobBytes(reference.blob);
+    const bytes = await storedBinaryBytes(reference.blob);
     serialized.push({
       id: reference.id,
       profileId: reference.profileId,
@@ -128,7 +124,7 @@ export function deserializeUploadReferences(
       filename: reference.filename,
       mediaType: reference.mediaType,
       size: reference.size,
-      blob: new Blob([isolated.buffer], { type: reference.mediaType }),
+      blob: isolated,
       rotation: reference.rotation,
       zoom: reference.zoom,
       crop: { ...reference.crop },

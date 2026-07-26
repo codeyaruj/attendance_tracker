@@ -5,22 +5,23 @@ import {
   Download,
   FileJson,
   FileSpreadsheet,
-  HardDrive,
   Palette,
   Upload,
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field, Select, Switch } from "@/components/ui/form-controls";
+import { Field, Select } from "@/components/ui/form-controls";
 import { attendSafeRepository, type AttendSafeSnapshot } from "@/db";
 import type { BackupImportProgress, PreparedBackupImport } from "@/lib/backup";
+import { beginCriticalOperation } from "@/lib/pwa/critical-operation";
+import { recordBackupGenerated } from "@/lib/pwa/storage";
 import type { ThemePreference } from "@/types/domain";
 
 import { applyThemePreference, safeExportFilename } from "./settings-model";
 import { BackupImportDialog } from "./backup-import-dialog";
+import { DeviceStorageSettings } from "./device-storage-settings";
 import {
   SettingsConfirmDialog,
   type DestructiveConfirmation,
@@ -79,9 +80,6 @@ function downloadText(text: string, filename: string, type: string): void {
 
 export function PreferenceSettings({ data }: { data: AttendSafeSnapshot }) {
   const [theme, setTheme] = useState(data.settings.theme);
-  const [notificationsPrepared, setNotificationsPrepared] = useState(
-    data.settings.notificationsPrepared,
-  );
 
   const changeTheme = async (value: ThemePreference) => {
     const previous = theme;
@@ -99,33 +97,12 @@ export function PreferenceSettings({ data }: { data: AttendSafeSnapshot }) {
     }
   };
 
-  const changeNotifications = async (checked: boolean) => {
-    setNotificationsPrepared(checked);
-    try {
-      await attendSafeRepository.updateSettings({
-        notificationsPrepared: checked,
-      });
-      toast.success(
-        checked
-          ? "Notification reminders are prepared"
-          : "Notification reminders disabled",
-      );
-    } catch (cause) {
-      setNotificationsPrepared(!checked);
-      toast.error(
-        cause instanceof Error
-          ? cause.message
-          : "Preference could not be saved.",
-      );
-    }
-  };
-
   return (
     <SettingsSection
       id="preferences"
       icon={Palette}
       title="App preferences"
-      description="Control appearance and prepare optional local reminders without creating an account."
+      description="Control this browser's appearance. AttendSafe does not request notification permission or promise background reminders."
     >
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
@@ -143,19 +120,20 @@ export function PreferenceSettings({ data }: { data: AttendSafeSnapshot }) {
             <option value="DARK">Dark</option>
           </Select>
         </Field>
-        <Switch
-          checked={notificationsPrepared}
-          onChange={(checked) => void changeNotifications(checked)}
-          label="Prepare local reminders"
-          description="Keeps reminder architecture ready. Browser permission is requested only by a future reminder you enable."
-        />
-      </div>
-      <div className="bg-secondary text-muted-foreground mt-4 flex flex-wrap items-center gap-2 rounded-xl p-3 text-sm">
-        <HardDrive className="size-4" aria-hidden="true" />
-        <span>Offline app shell</span>
-        <Badge tone={data.settings.offlineReady ? "safe" : "caution"}>
-          {data.settings.offlineReady ? "Ready" : "Preparing"}
-        </Badge>
+        <div className="bg-secondary text-muted-foreground rounded-xl p-4 text-sm leading-6">
+          <p className="text-foreground font-bold">No background reminders</p>
+          <p>
+            There is no push subscription or reliable closed-browser scheduler.
+            Notification permission is never requested automatically.
+          </p>
+          <p className="mt-2 text-xs">
+            Offline shell:{" "}
+            {data.settings.offlineReady
+              ? "ready"
+              : "preparing after an online production visit"}
+            .
+          </p>
+        </div>
       </div>
     </SettingsSection>
   );
@@ -174,6 +152,7 @@ export function DataPrivacySettings({ data }: { data: AttendSafeSnapshot }) {
   const importAbortRef = useRef<AbortController | undefined>(undefined);
 
   const exportJson = async (profileOnly: boolean) => {
+    const endCriticalOperation = beginCriticalOperation();
     setBusy(profileOnly ? "PROFILE_EXPORT" : "APP_EXPORT");
     try {
       const json = await attendSafeRepository.exportBackup(
@@ -187,6 +166,7 @@ export function DataPrivacySettings({ data }: { data: AttendSafeSnapshot }) {
         `attendance-tracker-backup-${label}-${new Date().toISOString().slice(0, 10)}.json`,
         "application/json",
       );
+      recordBackupGenerated();
       toast.success("JSON backup downloaded");
     } catch (cause) {
       toast.error(
@@ -196,12 +176,14 @@ export function DataPrivacySettings({ data }: { data: AttendSafeSnapshot }) {
       );
     } finally {
       setBusy(undefined);
+      endCriticalOperation();
     }
   };
 
   const importJson = async (file: File) => {
     if (busy) return;
     const controller = new AbortController();
+    const endCriticalOperation = beginCriticalOperation();
     importAbortRef.current = controller;
     setBusy("PREPARE_IMPORT");
     try {
@@ -219,6 +201,7 @@ export function DataPrivacySettings({ data }: { data: AttendSafeSnapshot }) {
       );
       setBusy(undefined);
     } finally {
+      endCriticalOperation();
       importAbortRef.current = undefined;
       if (inputRef.current) inputRef.current.value = "";
     }
@@ -226,6 +209,7 @@ export function DataPrivacySettings({ data }: { data: AttendSafeSnapshot }) {
 
   const applyPreparedImport = async () => {
     if (!preparedImport || busy) return;
+    const endCriticalOperation = beginCriticalOperation();
     setBusy("APPLY_IMPORT");
     setImportProgress({ stage: "IMPORTING", progress: 1 });
     try {
@@ -244,6 +228,7 @@ export function DataPrivacySettings({ data }: { data: AttendSafeSnapshot }) {
     } finally {
       setBusy(undefined);
       setImportProgress(undefined);
+      endCriticalOperation();
     }
   };
 
@@ -332,6 +317,7 @@ export function DataPrivacySettings({ data }: { data: AttendSafeSnapshot }) {
         title="Backup and privacy"
         description="Your academic data stays in IndexedDB on this device. Export a portable backup before clearing browser storage."
       >
+        <DeviceStorageSettings offlineReady={data.settings.offlineReady} />
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="border-border rounded-2xl border p-4">
             <div className="flex items-center gap-3">

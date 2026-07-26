@@ -18,6 +18,7 @@ import {
   type OcrPageResult,
   type TimetableExtractionResult,
 } from "./types";
+import { beginCriticalOperation } from "@/lib/pwa/critical-operation";
 
 export interface ExtractionDependencies {
   validateFile: typeof validateTimetableFile;
@@ -66,6 +67,7 @@ export class LocalTimetableExtractionService {
       );
     }
     this.running = true;
+    const endCriticalOperation = beginCriticalOperation();
     const controller = new AbortController();
     this.cancellation = controller;
     const cancelFromCaller = () => controller.abort();
@@ -182,6 +184,7 @@ export class LocalTimetableExtractionService {
       this.worker = undefined;
       this.cancellation = undefined;
       this.running = false;
+      endCriticalOperation();
     }
   }
 }

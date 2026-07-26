@@ -52,6 +52,7 @@ function finalizeMigration(
       appSettings: data.appSettings.map((settings) => ({
         ...settings,
         includeZeroCredit: settings.includeZeroCredit ?? false,
+        notificationsPrepared: false,
       })),
     },
   };
@@ -80,10 +81,26 @@ export function migrateBackup(input: unknown): MigratedBackup {
     }
     const current = attendSafeBackupSchema.safeParse(input);
     if (!current.success) throw schemaFailure(current.error);
+    const retiredNotifications = current.data.data.appSettings.some(
+      (settings) => settings.notificationsPrepared,
+    );
     return {
-      backup: current.data,
+      backup: {
+        ...current.data,
+        data: {
+          ...current.data.data,
+          appSettings: current.data.data.appSettings.map((settings) => ({
+            ...settings,
+            notificationsPrepared: false,
+          })),
+        },
+      },
       sourceVersion: BACKUP_FORMAT_VERSION,
-      warnings: [],
+      warnings: retiredNotifications
+        ? [
+            "Retired an obsolete reminder-preparation setting; no attendance data was changed.",
+          ]
+        : [],
     };
   }
 

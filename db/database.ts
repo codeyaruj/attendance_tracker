@@ -25,6 +25,7 @@ import {
   SCHEMA_V1,
   SCHEMA_V2,
   SCHEMA_V3,
+  SCHEMA_V4,
   TABLE_NAMES,
   defaultAppSettings,
   migrateProfileDefaults,
@@ -134,6 +135,19 @@ export class AttendSafeDatabase extends Dexie {
           .modify((group) => {
             group.options ??= [];
             group.selectedSubjectIds ??= [];
+          });
+      });
+
+    this.version(4)
+      .stores(SCHEMA_V4)
+      .upgrade(async (transaction) => {
+        await transaction
+          .table<AppSettings, AppSettings["id"]>("appSettings")
+          .toCollection()
+          .modify((settings) => {
+            // No scheduler or push delivery exists. Preserve all unrelated
+            // settings while retiring the old misleading preparation flag.
+            settings.notificationsPrepared = false;
           });
       });
   }

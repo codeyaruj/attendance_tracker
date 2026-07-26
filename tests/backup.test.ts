@@ -21,6 +21,7 @@ import {
   parseAndMigrateBackup,
   parseBackupJson,
 } from "@/lib/backup";
+import { storedBinaryBytes } from "@/lib/stored-binary";
 import { exportSubjectAttendanceCsv } from "@/lib/backup/subject-csv";
 
 const databases: AttendSafeDatabase[] = [];
@@ -173,9 +174,9 @@ describe("AttendSafe backup", () => {
       seeded.upload.id,
     );
     expect(importedUpload?.rotation).toBe(90);
-    expect(
-      new Uint8Array((await importedUpload?.blob.arrayBuffer()) ?? []),
-    ).toEqual(new Uint8Array(await seeded.upload.blob.arrayBuffer()));
+    expect(await storedBinaryBytes(importedUpload!.blob)).toEqual(
+      await storedBinaryBytes(seeded.upload.blob),
+    );
   });
 
   it("rejects malformed JSON and broken foreign-key references before writing", async () => {

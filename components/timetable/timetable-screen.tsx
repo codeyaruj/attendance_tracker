@@ -6,6 +6,8 @@ import {
   CheckCircle2,
   Clock3,
   History,
+  LayoutGrid,
+  List,
   MapPin,
   Pencil,
   Plus,
@@ -13,7 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -374,6 +376,24 @@ export function TimetableScreen() {
   const [versionLabel, setVersionLabel] = useState("");
   const [effectiveDate, setEffectiveDate] = useState("");
   const [savingVersion, setSavingVersion] = useState(false);
+  const [presentation, setPresentation] = useState<"AGENDA" | "WEEK">("AGENDA");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const stored = localStorage.getItem("attendsafe-timetable-view");
+      if (stored === "AGENDA" || stored === "WEEK") {
+        setPresentation(stored);
+      } else if (window.matchMedia("(min-width: 1024px)").matches) {
+        setPresentation("WEEK");
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const changePresentation = (next: "AGENDA" | "WEEK") => {
+    setPresentation(next);
+    localStorage.setItem("attendsafe-timetable-view", next);
+  };
 
   const today = data
     ? isoDateInTimeZone(new Date(), data.activeProfile?.timezone)
@@ -515,9 +535,12 @@ export function TimetableScreen() {
   };
 
   return (
-    <div className="grid gap-5" data-testid="timetable-screen">
-      <section className="border-border bg-surface flex flex-col gap-4 rounded-3xl border p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-        <div>
+    <div
+      className="grid w-full max-w-full min-w-0 grid-cols-[minmax(0,1fr)] gap-5"
+      data-testid="timetable-screen"
+    >
+      <section className="border-border bg-surface flex max-w-full min-w-0 flex-col gap-4 overflow-hidden rounded-3xl border p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="info">Version {version.version}</Badge>
             <Badge tone="safe">Confirmed</Badge>
@@ -525,7 +548,7 @@ export function TimetableScreen() {
               Effective {version.effectiveStartDate}
             </span>
           </div>
-          <h2 className="font-display mt-3 text-2xl font-extrabold tracking-tight">
+          <h2 className="font-display mt-3 text-2xl font-extrabold tracking-tight break-words">
             {data.timetables.find((item) => item.id === version.timetableId)
               ?.title ?? "My timetable"}
           </h2>
@@ -563,132 +586,175 @@ export function TimetableScreen() {
         />
       ) : (
         <>
-          <section className="lg:hidden">
+          <div className="flex items-center justify-between gap-3">
             <div
-              className="scrollbar-none -mx-4 flex gap-2 overflow-x-auto px-4 pb-3"
-              role="tablist"
-              aria-label="Timetable day"
+              className="bg-secondary flex rounded-xl p-1"
+              aria-label="Timetable presentation"
             >
-              {visibleDays.map((day) => {
-                const count = visibleSlots.filter(
-                  (slot) => slot.dayOfWeek === day,
-                ).length;
-                return (
-                  <button
-                    key={day}
-                    type="button"
-                    role="tab"
-                    aria-selected={displayedDay === day}
-                    onClick={() => setSelectedDay(day)}
-                    className={cn(
-                      "border-border bg-surface text-muted-foreground min-w-20 rounded-xl border px-3 py-2 text-sm font-bold",
-                      displayedDay === day &&
-                        "border-primary bg-primary-soft text-primary",
-                    )}
-                  >
-                    {titleCase(day).slice(0, 3)}
-                    <span className="mt-0.5 block text-[10px] font-medium opacity-70">
-                      {count} classes
-                    </span>
-                  </button>
-                );
-              })}
+              <Button
+                size="sm"
+                variant={presentation === "AGENDA" ? "primary" : "ghost"}
+                aria-pressed={presentation === "AGENDA"}
+                onClick={() => changePresentation("AGENDA")}
+              >
+                <List className="size-4" /> Agenda
+              </Button>
+              <Button
+                size="sm"
+                variant={presentation === "WEEK" ? "primary" : "ghost"}
+                aria-pressed={presentation === "WEEK"}
+                onClick={() => changePresentation("WEEK")}
+              >
+                <LayoutGrid className="size-4" /> Week
+              </Button>
             </div>
-            <div className="grid gap-3">
-              {visibleSlots
-                .filter((slot) => slot.dayOfWeek === displayedDay)
-                .sort((left, right) =>
-                  left.startTime.localeCompare(right.startTime),
-                )
-                .map((slot) => (
-                  <SlotPill
-                    key={slot.id}
-                    slot={slot}
-                    subject={
-                      slot.subjectId
-                        ? subjectsById.get(slot.subjectId)
-                        : undefined
-                    }
-                    active={
-                      displayedDay === dayNow &&
-                      slot.startTime <= timeNow &&
-                      timeNow < slot.endTime
-                    }
-                    onClick={() => setSelectedSlotId(slot.id)}
-                  />
-                ))}
-              {visibleSlots.every((slot) => slot.dayOfWeek !== displayedDay) ? (
-                <Card className="text-muted-foreground border-dashed p-8 text-center text-sm">
-                  No classes scheduled.
-                </Card>
-              ) : null}
-            </div>
-          </section>
+            {presentation === "WEEK" ? (
+              <p
+                className="text-muted-foreground text-xs"
+                id="week-scroll-hint"
+              >
+                Scroll sideways to see every day
+              </p>
+            ) : null}
+          </div>
 
-          <section
-            className="border-border bg-surface hidden overflow-hidden rounded-2xl border lg:block"
-            aria-label="Weekly timetable"
-          >
-            <div className="overflow-x-auto">
-              <div className="min-w-[1180px]">
-                <div className="border-border bg-secondary/60 grid grid-cols-[88px_repeat(7,minmax(145px,1fr))] border-b">
-                  <div className="text-muted-foreground p-3 text-xs font-bold tracking-wider uppercase">
-                    Time
-                  </div>
-                  {visibleDays.map((day) => (
-                    <div
+          {presentation === "AGENDA" ? (
+            <section aria-label="Timetable agenda">
+              <div
+                className="scrollbar-none flex w-full max-w-full gap-2 overflow-x-auto pb-3"
+                role="tablist"
+                aria-label="Timetable day"
+              >
+                {visibleDays.map((day) => {
+                  const count = visibleSlots.filter(
+                    (slot) => slot.dayOfWeek === day,
+                  ).length;
+                  return (
+                    <button
                       key={day}
+                      type="button"
+                      role="tab"
+                      aria-selected={displayedDay === day}
+                      onClick={() => setSelectedDay(day)}
                       className={cn(
-                        "border-border border-l p-3 text-center text-xs font-bold tracking-wider uppercase",
-                        day === dayNow && "bg-primary-soft text-primary",
+                        "border-border bg-surface text-muted-foreground min-w-20 rounded-xl border px-3 py-2 text-sm font-bold",
+                        displayedDay === day &&
+                          "border-primary bg-primary-soft text-primary",
                       )}
                     >
-                      {titleCase(day)}
-                    </div>
+                      {titleCase(day).slice(0, 3)}
+                      <span className="mt-0.5 block text-[10px] font-medium opacity-70">
+                        {count} classes
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="grid gap-3">
+                {visibleSlots
+                  .filter((slot) => slot.dayOfWeek === displayedDay)
+                  .sort((left, right) =>
+                    left.startTime.localeCompare(right.startTime),
+                  )
+                  .map((slot) => (
+                    <SlotPill
+                      key={slot.id}
+                      slot={slot}
+                      subject={
+                        slot.subjectId
+                          ? subjectsById.get(slot.subjectId)
+                          : undefined
+                      }
+                      active={
+                        displayedDay === dayNow &&
+                        slot.startTime <= timeNow &&
+                        timeNow < slot.endTime
+                      }
+                      onClick={() => setSelectedSlotId(slot.id)}
+                    />
                   ))}
-                </div>
-                {timeRows.map((time) => (
-                  <div
-                    key={time}
-                    className="border-border grid min-h-28 grid-cols-[88px_repeat(7,minmax(145px,1fr))] border-b last:border-b-0"
-                  >
-                    <div className="text-muted-foreground p-3 text-sm font-semibold">
-                      {formatClockTime(time)}
+                {visibleSlots.every(
+                  (slot) => slot.dayOfWeek !== displayedDay,
+                ) ? (
+                  <Card className="text-muted-foreground border-dashed p-8 text-center text-sm">
+                    No classes scheduled.
+                  </Card>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+
+          {presentation === "WEEK" ? (
+            <section
+              className="border-border bg-surface overflow-hidden rounded-2xl border"
+              aria-label="Weekly timetable"
+              aria-describedby="week-scroll-hint"
+            >
+              <div
+                className="overflow-x-auto overscroll-x-contain"
+                tabIndex={0}
+              >
+                <div className="min-w-[1180px]">
+                  <div className="border-border bg-secondary/60 grid grid-cols-[88px_repeat(7,minmax(145px,1fr))] border-b">
+                    <div className="text-muted-foreground p-3 text-xs font-bold tracking-wider uppercase">
+                      Time
                     </div>
                     {visibleDays.map((day) => (
                       <div
                         key={day}
-                        className="border-border grid content-start gap-2 border-l p-2"
+                        className={cn(
+                          "border-border border-l p-3 text-center text-xs font-bold tracking-wider uppercase",
+                          day === dayNow && "bg-primary-soft text-primary",
+                        )}
                       >
-                        {visibleSlots
-                          .filter(
-                            (slot) =>
-                              slot.dayOfWeek === day && slot.startTime === time,
-                          )
-                          .map((slot) => (
-                            <SlotPill
-                              key={slot.id}
-                              slot={slot}
-                              subject={
-                                slot.subjectId
-                                  ? subjectsById.get(slot.subjectId)
-                                  : undefined
-                              }
-                              active={
-                                day === dayNow &&
-                                slot.startTime <= timeNow &&
-                                timeNow < slot.endTime
-                              }
-                              onClick={() => setSelectedSlotId(slot.id)}
-                            />
-                          ))}
+                        {titleCase(day)}
                       </div>
                     ))}
                   </div>
-                ))}
+                  {timeRows.map((time) => (
+                    <div
+                      key={time}
+                      className="border-border grid min-h-28 grid-cols-[88px_repeat(7,minmax(145px,1fr))] border-b last:border-b-0"
+                    >
+                      <div className="text-muted-foreground p-3 text-sm font-semibold">
+                        {formatClockTime(time)}
+                      </div>
+                      {visibleDays.map((day) => (
+                        <div
+                          key={day}
+                          className="border-border grid content-start gap-2 border-l p-2"
+                        >
+                          {visibleSlots
+                            .filter(
+                              (slot) =>
+                                slot.dayOfWeek === day &&
+                                slot.startTime === time,
+                            )
+                            .map((slot) => (
+                              <SlotPill
+                                key={slot.id}
+                                slot={slot}
+                                subject={
+                                  slot.subjectId
+                                    ? subjectsById.get(slot.subjectId)
+                                    : undefined
+                                }
+                                active={
+                                  day === dayNow &&
+                                  slot.startTime <= timeNow &&
+                                  timeNow < slot.endTime
+                                }
+                                onClick={() => setSelectedSlotId(slot.id)}
+                              />
+                            ))}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          </section>
+            </section>
+          ) : null}
         </>
       )}
 

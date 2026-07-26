@@ -153,7 +153,7 @@ export function Dialog({
               <X className="size-5" aria-hidden="true" />
             </Button>
           </div>
-          <div className="min-h-0 min-w-0 flex-1 touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain px-5 pb-5 sm:px-6 sm:pb-6">
+          <div className="min-h-0 min-w-0 flex-1 touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain px-5 pb-[max(env(safe-area-inset-bottom),1.25rem)] sm:px-6 sm:pb-6">
             {children}
           </div>
         </section>

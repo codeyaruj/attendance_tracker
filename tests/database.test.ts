@@ -8,7 +8,7 @@ import { AttendSafeDatabase, checkDatabaseHealth } from "@/db/database";
 import { AttendSafeRepository } from "@/db/index";
 import { markAttendanceWithUndo, undoRecentAction } from "@/db/recent-actions";
 import { createRepositories } from "@/db/repositories";
-import { SCHEMA_V1 } from "@/db/schema";
+import { SCHEMA_V1, SCHEMA_V3 } from "@/db/schema";
 import {
   createProfileSetup,
   resetApplication,
@@ -79,7 +79,7 @@ describe("AttendSafeDatabase", () => {
     const database = createDatabase();
     await database.open();
 
-    expect(database.verno).toBe(3);
+    expect(database.verno).toBe(4);
     expect(database.tables.map((table) => table.name).sort()).toEqual(
       [
         "academicExceptions",
@@ -150,6 +150,39 @@ describe("AttendSafeDatabase", () => {
       exemptPolicy: "EXCLUDED",
       initialHeld: 0,
       initialAttended: 0,
+    });
+  });
+
+  it("retires the misleading reminder-preparation flag in version 4", async () => {
+    const name = `attendsafe-notification-migration-${crypto.randomUUID()}`;
+    const legacy = new Dexie(name, { indexedDB, IDBKeyRange });
+    legacy.version(3).stores(SCHEMA_V3);
+    await legacy.open();
+    await legacy.table("appSettings").put({
+      id: "app",
+      theme: "SYSTEM",
+      trackedClassTypes: {
+        THEORY: true,
+        LAB: false,
+        TUTORIAL: false,
+        SEMINAR: false,
+        PROJECT: false,
+        OTHER: false,
+      },
+      includeZeroCredit: false,
+      offlineReady: true,
+      notificationsPrepared: true,
+      updatedAt: now,
+    });
+    legacy.close();
+
+    const database = new AttendSafeDatabase(name, { indexedDB, IDBKeyRange });
+    openDatabases.push(database);
+    await database.open();
+
+    expect(await database.appSettings.get("app")).toMatchObject({
+      offlineReady: true,
+      notificationsPrepared: false,
     });
   });
 

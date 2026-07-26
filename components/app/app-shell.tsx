@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Brand } from "./brand";
 import { OfflineIndicator } from "./offline-indicator";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,12 @@ const navigation = [
   { href: "/history", label: "History", icon: History },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
+
+const primaryMobileNavigation = navigation.filter((item) =>
+  ["/today", "/dashboard", "/timetable", "/skip-planner", "/settings"].includes(
+    item.href,
+  ),
+);
 
 const pageTitles: Record<string, { title: string; eyebrow: string }> = {
   "/today": { title: "Today", eyebrow: "Daily check-in" },
@@ -48,6 +54,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { data } = useAttendSafeData();
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const menuPanelRef = useRef<HTMLElement>(null);
   const [dark, setDark] = useState(
     () =>
       typeof document !== "undefined" &&
@@ -66,6 +74,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     });
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const menuButton = menuButtonRef.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    menuPanelRef.current?.querySelector<HTMLElement>("button, a")?.focus();
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      menuButton?.focus();
+    };
+  }, [menuOpen]);
 
   const toggleTheme = () => {
     const next = !dark;
@@ -128,7 +148,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           className="fixed inset-0 z-50 bg-slate-950/40 lg:hidden"
           role="presentation"
         >
-          <aside className="bg-surface h-full w-[min(84vw,320px)] p-5 shadow-2xl">
+          <aside
+            ref={menuPanelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation menu"
+            className="bg-surface h-full w-[min(88vw,320px)] overflow-y-auto p-5 pt-[max(env(safe-area-inset-top),1.25rem)] shadow-2xl"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setMenuOpen(false);
+                return;
+              }
+              if (event.key !== "Tab") return;
+              const focusable =
+                menuPanelRef.current?.querySelectorAll<HTMLElement>(
+                  "a[href], button:not([disabled])",
+                );
+              if (!focusable?.length) return;
+              const first = focusable[0];
+              const last = focusable[focusable.length - 1];
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+              } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+              }
+            }}
+          >
             <div className="flex items-center justify-between">
               <Brand />
               <Button
@@ -146,6 +193,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   key={item.href}
                   href={item.href}
                   onClick={() => setMenuOpen(false)}
+                  aria-current={pathname === item.href ? "page" : undefined}
                   className={cn(
                     "text-muted-foreground flex min-h-12 items-center gap-3 rounded-xl px-3 font-semibold",
                     pathname === item.href && "bg-primary-soft text-primary",
@@ -161,10 +209,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ) : null}
 
       <div className="min-w-0 lg:col-start-2">
-        <header className="border-border/80 bg-background/90 sticky top-0 z-30 border-b px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8">
+        <header className="border-border/80 bg-background/90 sticky top-0 z-30 border-b px-4 pt-[max(env(safe-area-inset-top),0.75rem)] pb-3 backdrop-blur-xl sm:px-6 lg:px-8">
           <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3">
               <Button
+                ref={menuButtonRef}
                 variant="ghost"
                 size="icon"
                 className="lg:hidden"
@@ -211,8 +260,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="border-border bg-surface/95 fixed inset-x-0 bottom-0 z-40 border-t px-1 pt-1.5 pb-[max(env(safe-area-inset-bottom),0.35rem)] backdrop-blur-xl lg:hidden"
         aria-label="Bottom navigation"
       >
-        <div className="mx-auto grid max-w-lg grid-cols-6">
-          {navigation.map((item) => {
+        <div className="mx-auto grid max-w-lg grid-cols-5">
+          {primaryMobileNavigation.map((item) => {
             const active = pathname === item.href;
             return (
               <Link
@@ -220,7 +269,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "text-muted-foreground focus-visible:ring-primary flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-semibold focus-visible:ring-2 focus-visible:outline-none",
+                  "text-muted-foreground focus-visible:ring-primary flex min-h-14 min-w-11 flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-semibold focus-visible:ring-2 focus-visible:outline-none",
                   active && "text-primary",
                 )}
               >

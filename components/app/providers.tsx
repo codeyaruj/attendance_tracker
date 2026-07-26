@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { Toaster } from "sonner";
 
-import { attendSafeRepository } from "@/db";
+import { PwaLifecycle } from "./pwa-lifecycle";
 
 function applyStoredTheme(): void {
   const stored = localStorage.getItem("attendsafe-theme");
@@ -21,20 +21,13 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     const listener = () => applyStoredTheme();
     media.addEventListener("change", listener);
 
-    if (process.env.NODE_ENV === "production" && "serviceWorker" in navigator) {
-      void navigator.serviceWorker
-        .register("/sw.js")
-        .then(() => navigator.serviceWorker.ready)
-        .then(() => attendSafeRepository.updateSettings({ offlineReady: true }))
-        .catch(() => undefined);
-    }
-
     return () => media.removeEventListener("change", listener);
   }, []);
 
   return (
     <>
       {children}
+      <PwaLifecycle />
       <Toaster position="top-center" richColors closeButton />
     </>
   );

@@ -27,7 +27,7 @@ The application is mobile-first, installable as a PWA, works offline after the a
 - date-fns and exact basis-point/BigInt attendance arithmetic
 - Vitest + Testing Library for unit/integration tests
 - Playwright for Chromium desktop and mobile E2E flows
-- vinext/Cloudflare runtime for local preview and Sites deployment
+- Next.js static export for free static hosting, including Cloudflare Pages
 
 ## Run locally
 
@@ -40,6 +40,14 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+To test the responsive interface from a phone on the same local network:
+
+```bash
+pnpm dev:mobile
+```
+
+Open the computer's local-network address from the phone, such as `http://192.168.x.x:3000`. Do not hardcode or publicly expose this address. Both devices must use the same network, and the computer firewall may need to permit local incoming connections. Local HTTP is useful for responsive testing; installation, service workers, offline behavior, and production headers should be verified on the deployed HTTPS build.
+
 Useful commands:
 
 ```bash
@@ -48,6 +56,9 @@ pnpm typecheck
 pnpm test
 pnpm test:coverage
 pnpm test:e2e
+pnpm test:e2e:responsive
+pnpm test:e2e:cross-browser
+pnpm test:pwa
 pnpm build
 ```
 
@@ -74,7 +85,7 @@ The local pipeline:
 
 No upload or extraction API exists. Timetable files, rendered pages, and OCR output are never sent to a server. The original source file is stored in IndexedDB only after the user explicitly confirms the timetable, matching AttendSafe’s existing backup and reference behavior.
 
-`pnpm install`, `pnpm dev`, and `pnpm build` prepare self-hosted worker assets under `public/ocr-assets/`. The generated assets are approximately 17 MB: about 12 MB of Tesseract core variants, a 2.8 MB compressed English model, a 2.1 MB PDF.js worker, and a 128 KB Tesseract worker. They are fetched from the same application origin and cached by the production service worker. A first successful online production visit is therefore required before OCR is fully available offline.
+`pnpm install`, `pnpm dev`, and `pnpm build` prepare self-hosted worker assets under `public/ocr-assets/`. The generated assets are approximately 17 MB: about 12 MB of Tesseract core variants, a 2.8 MB compressed English model, a 2.1 MB PDF.js worker, and a 128 KB Tesseract worker. They are fetched from the same application origin and cached only when OCR first needs them. The first timetable scan therefore requires internet access; later scans can work offline after every required asset has downloaded successfully.
 
 ## Local data model
 
@@ -117,9 +128,44 @@ Backups are the portability mechanism. Clearing browser storage, using private b
 
 ## PWA and offline behavior
 
-`app/manifest.ts`, `public/sw.js`, and generated icons provide installability and app-shell caching. Navigation, local OCR assets, and cached static assets remain available offline after the first successful production visit; IndexedDB-backed timetable and attendance features do not depend on a network connection. Uploaded user files are never placed in the service-worker cache.
+`app/manifest.ts`, `public/sw.js`, and purpose-built icons provide installability and app-shell caching. The worker uses versioned, positive allowlists:
 
-Browser notification preparation is optional and requires an explicit user action. Notifications remain best-effort because delivery semantics vary by browser and operating system.
+- known navigation routes use network-first with a cached shell fallback;
+- immutable Next.js and icon assets use cache-first;
+- locally hosted OCR/PDF worker, WASM, and language files cache on first use;
+- API paths, unknown routes, backups, attachments, non-GET requests, failed/opaque responses, and responses marked `private` or `no-store` are never cached.
+
+Uploaded images, PDFs, object URLs, data URLs, backups, and other user-generated files never enter Cache Storage. IndexedDB is not cleared during worker installation, activation, updates, or offline-cache clearing. Waiting updates show an explicit **Update now / Later** notice and will not activate while OCR, backup import/export, or database recovery is active.
+
+After the application shell has been cached, timetable viewing/editing, attendance marking, calculations, and JSON backup generation continue offline. A first visit and the first OCR asset download still need a connection. If a required resource was not cached completely, reconnect and retry.
+
+### Install on Android or desktop Chromium
+
+Open the deployed HTTPS site and use AttendSafe's **Install app** action when the browser offers it, or use the browser menu's installation command. The action is hidden in an installed standalone window and can be dismissed.
+
+### Install on iPhone or iPad
+
+Open the deployed HTTPS site in Safari, choose **Share**, then **Add to Home Screen**. iOS does not consistently provide the same install-prompt event as Chromium, so AttendSafe displays concise dismissible guidance when appropriate.
+
+Installation does not create an account, enable cloud sync, or copy records from another browser/device.
+
+## Storage, transfer, and notifications
+
+Settings reports approximate origin usage/quota and whether the browser granted persistent storage. Persistence is requested only after the user selects **Protect local data**, never on initial load. A grant only reduces automatic eviction risk; it cannot protect against clearing browser data, browser removal, private-browsing cleanup, hardware loss, or device failure.
+
+Data is isolated per browser profile and device. To transfer it for free:
+
+```text
+Old device: export a JSON backup
+        ↓
+Store or transfer that sensitive file securely
+        ↓
+New device: open AttendSafe and import the backup
+```
+
+There is no automatic cloud sync. The app cannot verify that a downloaded backup was retained. **Clear downloaded app files** removes only AttendSafe's service-worker caches; it does not remove IndexedDB attendance, timetable, settings, or backup metadata.
+
+Attendance reminders have been removed because there is no reliable scheduler, push subscription, or closed-browser delivery. AttendSafe never requests notification permission on startup and does not claim that notifications work after the browser is closed.
 
 ## Project map
 
@@ -137,16 +183,58 @@ tests/                   Unit, integration, UI, and Playwright coverage
 types/                   Normalized domain and draft types
 ```
 
-## Deployment notes
+## Static export and Cloudflare Pages
 
-Create and inspect the production bundle locally with:
+`next.config.ts` enables `output: "export"`, trailing slashes, and unoptimized images. Create and independently serve the deployable output with:
+
+```bash
+NEXT_PUBLIC_SITE_URL=https://your-project.pages.dev pnpm build
+pnpm start
+```
+
+The complete site is written to `out/`; no Node.js process is required after deployment. There are no API routes, server actions, middleware, sessions, remote extraction calls, or cloud database bindings.
+
+Cloudflare Pages configuration:
+
+1. Push this repository to GitHub.
+2. Create a free Cloudflare Pages project and connect the repository.
+3. Set the build command to `pnpm build`.
+4. Set the output directory to `out`.
+5. Set `NEXT_PUBLIC_SITE_URL` to the project's public HTTPS URL, including a generated `pages.dev` URL when no custom domain is used.
+6. Deploy and verify route refreshes, installability, offline loading, OCR/PDF workers, and headers at the generated HTTPS address.
+
+No Cloudflare Worker, paid hosting plan, custom domain, or runtime environment variable is required. `NEXT_PUBLIC_SITE_URL` is build-time metadata only. If it is missing from a production build, AttendSafe omits the metadata base instead of embedding localhost.
+
+Architecture:
+
+```text
+GitHub repository
+        ↓
+Static Next.js build
+        ↓
+Cloudflare Pages over HTTPS
+        ↓
+Mobile or desktop browser
+        ↓
+Installed PWA
+        ↓
+Local OCR + IndexedDB
+        ↓
+JSON export/import for device transfer
+```
+
+## Production security headers
+
+Cloudflare Pages copies `public/_headers` into `out/_headers`. It defines CSP, clickjacking protection, MIME-sniffing protection, referrer and permissions policies, HSTS, cross-origin opener isolation, and a no-cache policy for `sw.js`.
+
+The CSP is intentionally same-origin. Next.js currently requires `'unsafe-inline'` for its generated inline bootstrap scripts and styles. Tesseract's local WASM requires the narrower `'wasm-unsafe-eval'`; ordinary `'unsafe-eval'`, wildcard sources, arbitrary HTTPS sources, and third-party script providers are not allowed. `worker-src 'self' blob:` is needed by Tesseract's local worker, while `img-src 'self' data: blob:` supports local previews without uploading them.
+
+Inspect a production build locally with:
 
 ```bash
 pnpm build
 pnpm start
 ```
-
-The repository includes `.openai/hosting.json`, vinext, and a Cloudflare Worker entry for Sites. Publish the validated bundle through Sites; the recorded project can be reused on later deployments. No D1 or R2 binding is declared because device-local IndexedDB is the source of truth by design. Set `NEXT_PUBLIC_SITE_URL` for canonical social metadata in a deployed environment. Timetable extraction has no secrets or runtime service configuration.
 
 ## Security boundaries
 
@@ -163,5 +251,7 @@ The repository includes `.openai/hosting.json`, vinext, and a Cloudflare Worker 
 - OCR accuracy depends on image quality, table layout, fonts, and browser resources. Merged cells, handwriting, unusual rotations, dense electives, and ambiguous abbreviations may require substantial manual correction.
 - Local OCR is CPU- and memory-intensive. Files are bounded to 10 MB, PDFs to five pages, rendered canvases to four million pixels, and extraction to one page/job at a time.
 - Browsers may evict site storage under device pressure. JSON backups are the durable portability and recovery mechanism; backups containing source-image blobs can be comparatively large.
-- Offline use is available after a successful production visit has warmed the service-worker cache. Browser notification delivery remains best-effort and platform-dependent.
+- Offline use is available after a successful production visit has warmed the application shell. OCR works offline only after its first complete asset download.
+- Safari/WebKit, Firefox, Chromium, Android PWAs, and iOS home-screen apps differ in install prompting, storage quotas, persistence decisions, and service-worker lifecycle timing. Feature detection is used, but identical behavior cannot be guaranteed.
+- Persistent storage is never guaranteed. iOS may remove home-screen site data under platform-specific conditions, and private browsing is unsuitable for durable records.
 - Future skip projections assume the confirmed timetable, future sessions, and attendance policy remain unchanged over the simulated period.

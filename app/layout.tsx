@@ -2,10 +2,31 @@ import type { Metadata, Viewport } from "next";
 import { AppProviders } from "@/components/app/providers";
 import "./globals.css";
 
+function configuredSiteUrl(): URL | undefined {
+  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (!configured) {
+    return process.env.NODE_ENV === "development"
+      ? new URL("http://localhost:3000")
+      : undefined;
+  }
+  try {
+    const url = new URL(configured);
+    if (
+      (process.env.NODE_ENV === "production" && url.protocol !== "https:") ||
+      (url.protocol !== "https:" && url.protocol !== "http:")
+    ) {
+      return undefined;
+    }
+    return url;
+  } catch {
+    return undefined;
+  }
+}
+
+const siteUrl = configuredSiteUrl();
+
 export const metadata: Metadata = {
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
-  ),
+  metadataBase: siteUrl,
   title: {
     default: "AttendSafe — Know what you can skip",
     template: "%s · AttendSafe",
@@ -25,7 +46,8 @@ export const metadata: Metadata = {
       { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
       { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: "/icons/icon-192.png",
+    apple: "/icons/apple-touch-icon.png",
+    shortcut: "/icons/favicon-32.png",
   },
   openGraph: {
     title: "AttendSafe — Know what you can skip",
@@ -53,6 +75,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#f6f7f2" },
     { media: "(prefers-color-scheme: dark)", color: "#111815" },
@@ -63,7 +86,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning data-scroll-behavior="smooth">
       <body>
         <AppProviders>{children}</AppProviders>
       </body>

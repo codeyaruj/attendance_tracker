@@ -5,8 +5,7 @@ const FIXED_NOW = new Date("2026-07-23T10:00:00+05:30");
 
 type StoredRecord = Record<string, unknown>;
 
-// Vinext binds its development server to localhost on macOS. Keeping this
-// suite-level override also makes the spec usable with an already-running app.
+// The suite-level override also makes the spec usable with an already-running app.
 test.use({ baseURL: "http://localhost:3000" });
 
 async function resetLocalData(page: Page): Promise<void> {
@@ -69,7 +68,7 @@ async function readStore(
 
 async function loadDemo(page: Page): Promise<void> {
   await page.getByTestId("load-demo").click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page).toHaveURL(/\/dashboard\/?$/);
   await expect(page.getByTestId("dashboard-page")).toBeVisible();
 }
 
@@ -157,7 +156,7 @@ test("manual timetable creation supports attendance marking and dashboard review
   await advanceTimetableConfirmation(page);
   await page.getByTestId("confirm-timetable").click();
 
-  await expect(page).toHaveURL(/\/today$/);
+  await expect(page).toHaveURL(/\/today\/?$/);
   await expect(page.getByTestId("today-page")).toBeVisible();
   await markFirstClassPresent(page);
   await page.goto("/dashboard");
@@ -205,7 +204,7 @@ test("timetable upload can skip local OCR and continue to manual review", async 
   await slotForm.getByTestId("save-slot").click();
   await page.getByTestId("confirm-timetable").click();
 
-  await expect(page).toHaveURL(/\/today$/);
+  await expect(page).toHaveURL(/\/today\/?$/);
   await expect(page.getByText("Uploaded Schedule Class")).toBeVisible();
   await expect
     .poll(
@@ -412,6 +411,7 @@ test("a JSON backup can be exported, reset, and re-imported", async ({
     .fill("RESET APP");
   await resetDialog.getByTestId("destructive-confirmation-submit").click();
   await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId("choose-manual")).toBeVisible();
   await expect
     .poll(async () => (await readStore(page, "profiles")).length)
     .toBe(0);
@@ -560,4 +560,87 @@ test("reset attendance stays locked behind its typed confirmation", async ({
   await expect
     .poll(async () => (await readStore(page, "attendanceRecords")).length)
     .toBe(0);
+});
+
+test("@responsive primary pages fit narrow viewports and expose touch-friendly controls", async ({
+  page,
+}) => {
+  await loadDemo(page);
+  const routes = [
+    "/today/",
+    "/dashboard/",
+    "/timetable/",
+    "/skip-planner/",
+    "/history/",
+    "/settings/",
+  ];
+
+  for (const route of routes) {
+    await page.goto(route);
+    await expect(page.locator("main")).toBeVisible();
+    const overflow = await page.evaluate(() => ({
+      viewport: window.innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+      offenders: Array.from(document.querySelectorAll<HTMLElement>("*"))
+        .map((element) => ({
+          tag: element.tagName,
+          classes: element.className,
+          right: Math.round(element.getBoundingClientRect().right),
+        }))
+        .filter((item) => item.right > window.innerWidth + 1)
+        .slice(0, 8),
+    }));
+    expect(
+      overflow.documentWidth,
+      `${route} overflow diagnostics: ${JSON.stringify(overflow)}`,
+    ).toBeLessThanOrEqual(overflow.viewport);
+  }
+
+  await page.goto("/today/");
+  const present = page
+    .getByRole("button", { name: "Present", exact: true })
+    .first();
+  const bounds = await present.boundingBox();
+  expect(bounds?.height).toBeGreaterThanOrEqual(44);
+  if ((page.viewportSize()?.width ?? 1280) < 1024) {
+    await expect(
+      page.getByRole("navigation", { name: "Bottom navigation" }),
+    ).toBeVisible();
+  }
+
+  await page.goto("/timetable/");
+  await page.getByRole("button", { name: "Agenda", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "Timetable agenda" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Week", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "Weekly timetable" }),
+  ).toBeVisible();
+
+  await page.goto("/settings/");
+  await expect(page.getByText("Storage on this device")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Protect local data" }),
+  ).toBeVisible();
+});
+
+test("@responsive timetable upload offers camera and existing-file choices", async ({
+  page,
+}) => {
+  await page.getByTestId("choose-upload").click();
+  await completeProfileSetup(page, "Mobile Upload Student");
+  await expect(
+    page.locator("button").filter({ hasText: "Take timetable photo" }),
+  ).toBeVisible();
+  await expect(
+    page.locator("button").filter({ hasText: "Choose image or PDF" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Take timetable photo")).toHaveAttribute(
+    "capture",
+    "environment",
+  );
+  await expect(
+    page.getByLabel("Choose timetable image or PDF"),
+  ).not.toHaveAttribute("capture");
 });

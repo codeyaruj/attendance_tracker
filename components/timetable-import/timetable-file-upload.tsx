@@ -3,6 +3,7 @@
 import {
   FileImage,
   FileText,
+  Camera,
   Keyboard,
   LockKeyhole,
   ScanSearch,
@@ -66,7 +67,8 @@ export function TimetableFileUpload({
     },
   ) => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const serviceRef = useRef<LocalTimetableExtractionService>(
     new LocalTimetableExtractionService(),
   );
@@ -121,7 +123,8 @@ export function TimetableFileUpload({
     abortRef.current?.abort();
     await serviceRef.current.cancel();
     if (previewUrl) URL.revokeObjectURL(previewUrl);
-    if (inputRef.current) inputRef.current.value = "";
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
     setFile(undefined);
     setPreviewUrl("");
     setResult(undefined);
@@ -239,9 +242,7 @@ export function TimetableFileUpload({
       </div>
 
       {!file ? (
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
+        <div
           onDragEnter={(event) => {
             event.preventDefault();
             setDragging(true);
@@ -254,7 +255,7 @@ export function TimetableFileUpload({
             chooseFile(event.dataTransfer.files[0]);
           }}
           className={cn(
-            "border-border bg-surface focus-visible:ring-primary grid min-h-[400px] place-items-center rounded-3xl border-2 border-dashed p-8 text-center transition-colors focus-visible:ring-2 focus-visible:outline-none",
+            "border-border bg-surface grid min-h-[320px] place-items-center rounded-3xl border-2 border-dashed p-5 text-center transition-colors sm:min-h-[400px] sm:p-8",
             dragging && "border-primary bg-primary-soft",
           )}
         >
@@ -268,11 +269,20 @@ export function TimetableFileUpload({
             <p className="text-muted-foreground mt-2 text-sm leading-6">
               PNG, JPEG, WebP, or PDF · up to 10 MB · PDFs up to 5 pages
             </p>
-            <span className="bg-primary text-primary-foreground mt-6 inline-flex min-h-11 items-center rounded-xl px-4 text-sm font-bold">
-              Choose file or camera
-            </span>
+            <div className="mt-6 grid gap-2 sm:grid-cols-2">
+              <Button size="lg" onClick={() => cameraInputRef.current?.click()}>
+                <Camera className="size-5" /> Take timetable photo
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="size-5" /> Choose image or PDF
+              </Button>
+            </div>
           </div>
-        </button>
+        </div>
       ) : (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]">
           <Card className="overflow-hidden">
@@ -318,7 +328,7 @@ export function TimetableFileUpload({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => inputRef.current?.click()}
+                onClick={() => fileInputRef.current?.click()}
               >
                 Replace
               </Button>
@@ -341,6 +351,11 @@ export function TimetableFileUpload({
                 </div>
               </div>
             </Card>
+            <Card className="border-info-strong/20 bg-info-soft text-info-strong p-4 text-sm leading-5">
+              The first timetable scan requires an internet connection to
+              download the self-hosted OCR engine. Later scans can work offline
+              after those files are cached successfully.
+            </Card>
             <Button
               size="lg"
               onClick={() => void extract()}
@@ -357,10 +372,18 @@ export function TimetableFileUpload({
       )}
 
       <input
-        ref={inputRef}
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="sr-only"
+        onChange={(event) => chooseFile(event.target.files?.[0])}
+        aria-label="Take timetable photo"
+      />
+      <input
+        ref={fileInputRef}
         type="file"
         accept="image/jpeg,image/png,image/webp,application/pdf"
-        capture="environment"
         className="sr-only"
         onChange={(event) => chooseFile(event.target.files?.[0])}
         aria-label="Choose timetable image or PDF"

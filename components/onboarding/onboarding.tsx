@@ -253,12 +253,15 @@ export function Onboarding() {
 
       let uploadedReferenceId: string | undefined;
       if (source) {
+        // WebKit can reject File/Blob values during IndexedDB cloning. A typed
+        // byte array is portable across Chromium, Firefox, and Safari/WebKit.
+        const sourceBytes = new Uint8Array(await source.file.arrayBuffer());
         uploadedReferenceId = await attendSafeRepository.storeUploadReference({
           profileId: profileSetup.profile.id,
           semesterId: profileSetup.semester.id,
           filename: source.file.name,
           mediaType: source.file.type,
-          blob: source.file,
+          blob: sourceBytes,
           rotation: source.edits.rotation,
           zoom: source.edits.zoom,
           crop: source.edits.crop,

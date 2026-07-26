@@ -211,6 +211,7 @@ export interface AppSettings {
   trackedClassTypes: Record<ClassType, boolean>;
   includeZeroCredit?: boolean;
   offlineReady: boolean;
+  /** Deprecated compatibility field. Always false: no reminder scheduler exists. */
   notificationsPrepared: boolean;
   updatedAt: string;
 }
@@ -222,7 +223,8 @@ export interface UploadedTimetableReference extends TimestampedEntity {
   filename: string;
   mediaType: string;
   size: number;
-  blob: Blob;
+  /** Uint8Array is the portable IndexedDB representation; Blob remains readable for legacy data. */
+  blob: Blob | Uint8Array;
   rotation: 0 | 90 | 180 | 270;
   zoom: number;
   crop: { top: number; right: number; bottom: number; left: number };

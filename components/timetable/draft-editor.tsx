@@ -11,7 +11,7 @@ import {
   Rows3,
   Trash2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,7 +60,8 @@ export function DraftEditor({
   onChange: (value: NormalizedTimetableDraft) => void;
   compact?: boolean;
 }) {
-  const [view, setView] = useState<"GRID" | "LIST">("GRID");
+  const [view, setView] = useState<"GRID" | "LIST">("LIST");
+  const [pendingDelete, setPendingDelete] = useState<DraftSlot>();
   const [editingSlot, setEditingSlot] = useState<DraftSlot | undefined>();
   const [newSlotContext, setNewSlotContext] = useState<{
     day?: DayOfWeek;
@@ -82,6 +83,21 @@ export function DraftEditor({
     () => findDraftConflictSlotIds(value.timetableSlots).size,
     [value.timetableSlots],
   );
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const stored = localStorage.getItem("attendsafe-editor-view");
+      if (stored === "GRID" || stored === "LIST") setView(stored);
+      else if (window.matchMedia("(min-width: 1024px)").matches)
+        setView("GRID");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const changeView = (next: "GRID" | "LIST") => {
+    setView(next);
+    localStorage.setItem("attendsafe-editor-view", next);
+  };
 
   const saveSlot = (
     subject: DraftSubject | undefined,
@@ -189,7 +205,7 @@ export function DraftEditor({
           <Button
             size="sm"
             variant={view === "GRID" ? "primary" : "ghost"}
-            onClick={() => setView("GRID")}
+            onClick={() => changeView("GRID")}
             aria-pressed={view === "GRID"}
           >
             <Grid3X3 className="size-4" /> Weekly grid
@@ -197,7 +213,7 @@ export function DraftEditor({
           <Button
             size="sm"
             variant={view === "LIST" ? "primary" : "ghost"}
-            onClick={() => setView("LIST")}
+            onClick={() => changeView("LIST")}
             aria-pressed={view === "LIST"}
           >
             <List className="size-4" /> Form list
@@ -380,7 +396,7 @@ export function DraftEditor({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => removeSlot(slot)}
+                        onClick={() => setPendingDelete(slot)}
                         aria-label="Delete class"
                       >
                         <Trash2 className="text-danger size-4" />
@@ -504,6 +520,28 @@ export function DraftEditor({
               Parse & review
             </Button>
           </div>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(pendingDelete)}
+        onClose={() => setPendingDelete(undefined)}
+        title="Delete this class?"
+        description="This removes the class from the timetable draft. Other classes and saved attendance are unchanged."
+      >
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="ghost" onClick={() => setPendingDelete(undefined)}>
+            Keep class
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              if (pendingDelete) removeSlot(pendingDelete);
+              setPendingDelete(undefined);
+            }}
+          >
+            Delete class
+          </Button>
         </div>
       </Dialog>
     </div>

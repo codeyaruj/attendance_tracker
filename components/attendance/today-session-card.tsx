@@ -172,6 +172,7 @@ export function TodaySessionCard({
                   }
                   size="sm"
                   className={cn(
+                    "min-h-11",
                     index >= 2 && "col-span-1",
                     index === 4 && "col-span-2 sm:col-span-1",
                   )}

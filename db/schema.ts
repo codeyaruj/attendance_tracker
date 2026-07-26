@@ -10,7 +10,7 @@ import type {
  * add a new entry and an upgrade function in `AttendSafeDatabase` instead.
  */
 export const DATABASE_NAME = "attendsafe";
-export const DATABASE_SCHEMA_VERSION = 3;
+export const DATABASE_SCHEMA_VERSION = 4;
 
 export const SCHEMA_V1 = {
   profiles: "id, displayName, createdAt, updatedAt",
@@ -51,6 +51,10 @@ export const SCHEMA_V3 = {
     "id, semesterId, subjectId, timetableSlotId, timetableVersionId, [semesterId+date], [subjectId+date], [timetableSlotId+date], date, status, source, updatedAt",
 } as const;
 
+// Version 4 changes settings semantics through an explicit migration without
+// changing table indexes.
+export const SCHEMA_V4 = { ...SCHEMA_V3 } as const;
+
 export const TABLE_NAMES = [
   "profiles",
   "semesters",
@@ -87,7 +91,7 @@ export function defaultAppSettings(
     trackedClassTypes: { ...DEFAULT_TRACKED_CLASS_TYPES },
     includeZeroCredit: false,
     offlineReady: false,
-    notificationsPrepared: true,
+    notificationsPrepared: false,
     updatedAt: now,
   };
 }
