@@ -4,7 +4,6 @@ import {
   applyDraftSlotEdit,
   findDraftConflictSlotIds,
   mergeDuplicateSubjects,
-  repeatDraftSlot,
   synchronizeDraftAlternatives,
 } from "@/lib/timetable";
 import type {
@@ -136,29 +135,6 @@ describe("manual draft conveniences", () => {
           },
         ],
       },
-    ]);
-  });
-
-  it("repeats a class across days and consecutive periods", () => {
-    const additions = repeatDraftSlot(
-      slot("slot-a"),
-      ["WEDNESDAY", "SUNDAY"],
-      1,
-    );
-
-    expect(additions).toHaveLength(5);
-    expect(
-      additions.map(({ dayOfWeek, startTime, endTime }) => ({
-        dayOfWeek,
-        startTime,
-        endTime,
-      })),
-    ).toEqual([
-      { dayOfWeek: "MONDAY", startTime: "10:00", endTime: "11:00" },
-      { dayOfWeek: "WEDNESDAY", startTime: "09:00", endTime: "10:00" },
-      { dayOfWeek: "WEDNESDAY", startTime: "10:00", endTime: "11:00" },
-      { dayOfWeek: "SUNDAY", startTime: "09:00", endTime: "10:00" },
-      { dayOfWeek: "SUNDAY", startTime: "10:00", endTime: "11:00" },
     ]);
   });
 

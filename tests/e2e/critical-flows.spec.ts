@@ -198,8 +198,8 @@ test("timetable upload can skip local OCR and continue to manual review", async 
   const subjectForm = page.getByTestId("add-subject-form");
   await subjectForm.getByLabel("Subject name").fill("Uploaded Schedule Class");
   await subjectForm.getByLabel("Subject code").fill("UPL501");
-  await subjectForm.getByLabel("Mon").uncheck();
-  await subjectForm.getByLabel("Thu").check();
+  await subjectForm.getByText("Mon", { exact: true }).click();
+  await subjectForm.getByText("Thu", { exact: true }).click();
   await subjectForm.getByLabel("Starts").fill("11:00");
   await subjectForm.getByLabel("Ends").fill("12:00");
   await subjectForm.getByTestId("preview-subject").click();

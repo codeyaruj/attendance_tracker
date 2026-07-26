@@ -406,36 +406,3 @@ export function minutesToTime(value: number): string | undefined {
     return undefined;
   return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 }
-
-export function repeatDraftSlot(
-  slot: DraftSlot,
-  days: readonly DraftSlot["dayOfWeek"][],
-  additionalConsecutivePeriods: number,
-): DraftSlot[] {
-  const start = timeToMinutes(slot.startTime);
-  const end = timeToMinutes(slot.endTime);
-  if (start === undefined || end === undefined || end <= start) return [];
-  const duration = end - start;
-  const targetDays = Array.from(new Set([slot.dayOfWeek, ...days]));
-  const additions: DraftSlot[] = [];
-
-  targetDays.forEach((day) => {
-    for (
-      let offset = day === slot.dayOfWeek ? 1 : 0;
-      offset <= additionalConsecutivePeriods;
-      offset += 1
-    ) {
-      const startTime = minutesToTime(start + duration * offset);
-      const endTime = minutesToTime(end + duration * offset);
-      if (!startTime || !endTime) continue;
-      additions.push({
-        ...slot,
-        temporaryId: crypto.randomUUID(),
-        dayOfWeek: day,
-        startTime,
-        endTime,
-      });
-    }
-  });
-  return additions;
-}
