@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ExtractionPreview } from "@/components/timetable-import/extraction-preview";
 import { ExtractionProgress } from "@/components/timetable-import/extraction-progress";
 import { TimetableFileUpload } from "@/components/timetable-import/timetable-file-upload";
+import { ExtractionError } from "@/components/timetable-import/extraction-error";
 import type { TimetableExtractionResult } from "@/lib/timetable-extraction";
 
 const result: TimetableExtractionResult = {
@@ -101,7 +102,7 @@ describe("local extraction UI", () => {
       /PNG, JPEG, WebP, or PDF/,
     );
     expect(
-      screen.getByRole("button", { name: /enter this timetable manually/i }),
+      screen.getByRole("button", { name: /enter timetable manually/i }),
     ).toBeVisible();
   });
 
@@ -120,7 +121,7 @@ describe("local extraction UI", () => {
     fireEvent.change(screen.getByLabelText("Choose timetable image or PDF"), {
       target: { files: [file] },
     });
-    expect(screen.getByText(/Processed locally/)).toBeInTheDocument();
+    expect(screen.getByText(/Local by default/)).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: /skip ocr and enter it myself/i }),
     );
@@ -128,5 +129,66 @@ describe("local extraction UI", () => {
       expect.objectContaining({ timetableSlots: [] }),
       expect.objectContaining({ file }),
     );
+  });
+
+  it("requires fresh consent and sends nothing when the AI dialog is cancelled", () => {
+    const onAi = vi.fn(async () => undefined);
+    render(
+      <ExtractionError
+        message="The structure was unreliable."
+        onRetry={vi.fn()}
+        onManual={vi.fn()}
+        onAi={onAi}
+        aiAvailable
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Use AI to Read Schedule" }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Use AI to read this schedule?" }),
+    ).toBeVisible();
+    expect(screen.getByText(/attendance history, percentages/)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onAi).not.toHaveBeenCalled();
+  });
+
+  it("submits exactly once after explicit AI consent", () => {
+    const onAi = vi.fn(async () => undefined);
+    render(
+      <ExtractionError
+        message="The structure was unreliable."
+        onRetry={vi.fn()}
+        onManual={vi.fn()}
+        onAi={onAi}
+        aiAvailable
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Use AI to Read Schedule" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue with AI" }));
+    expect(onAi).toHaveBeenCalledOnce();
+  });
+
+  it("keeps local alternatives available while AI is offline", () => {
+    render(
+      <ExtractionError
+        message="The structure was unreliable."
+        onRetry={vi.fn()}
+        onManual={vi.fn()}
+        onAi={vi.fn(async () => undefined)}
+        aiAvailable={false}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "AI requires internet" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Try another file" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Enter timetable manually" }),
+    ).toBeEnabled();
   });
 });

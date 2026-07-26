@@ -4,6 +4,7 @@ export * from "./image-loader";
 export * from "./image-preprocessing";
 export * from "./ocr-worker";
 export * from "./pdf-renderer";
+export * from "./reliability";
 export * from "./semantic-parsing";
 export * from "./structured-timetable-parser";
 export * from "./table-vision";

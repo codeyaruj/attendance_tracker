@@ -69,6 +69,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - run: pnpm verify:functions
       - run: pnpm verify:static
       - run: pnpm verify:security
       - run: pnpm verify:assets

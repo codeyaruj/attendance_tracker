@@ -58,6 +58,12 @@ for (const required of [
 if (/indexedDB|deleteDatabase/i.test(worker))
   errors.push("service worker must not access or delete IndexedDB");
 
+const aiFunction = await readFile("functions/api/timetable/analyse.ts", "utf8");
+if (!aiFunction.includes("context.env.GEMINI_API_KEY"))
+  errors.push("Gemini key is not read from the Pages Function environment");
+if (/NEXT_PUBLIC_GEMINI|console\.(?:log|debug|info)/.test(aiFunction))
+  errors.push("Pages Function exposes or logs Gemini configuration");
+
 for (const path of ["app/api", "pages/api", "middleware.ts", "middleware.js"]) {
   try {
     await access(path);
@@ -110,5 +116,5 @@ if (errors.length) {
   process.exit(1);
 }
 process.stdout.write(
-  "Security architecture verified: static-only, local-first, stable IndexedDB, scoped caches, and required headers.\n",
+  "Security architecture verified: local-first data, consent-gated server AI, stable IndexedDB, scoped caches, and required headers.\n",
 );

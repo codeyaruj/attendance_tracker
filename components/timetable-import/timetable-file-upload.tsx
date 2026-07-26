@@ -23,6 +23,12 @@ import {
   type ImageEdits,
   type TimetableExtractionResult,
 } from "@/lib/timetable-extraction";
+import {
+  aiTimetableToDraft,
+  requestAiTimetable,
+  type LocalExtractionHints,
+} from "@/lib/ai-timetable";
+import { evaluateLocalExtraction } from "@/lib/timetable-extraction";
 import { cn } from "@/lib/utils";
 import type { NormalizedTimetableDraft } from "@/types";
 import { ExtractionError } from "./extraction-error";
@@ -73,6 +79,7 @@ export function TimetableFileUpload({
     new LocalTimetableExtractionService(),
   );
   const abortRef = useRef<AbortController | null>(null);
+  const aiAbortRef = useRef<AbortController | null>(null);
   const [mode, setMode] = useState<UploadMode>("SELECT");
   const [file, setFile] = useState<File>();
   const [previewUrl, setPreviewUrl] = useState("");
@@ -84,10 +91,27 @@ export function TimetableFileUpload({
   });
   const [result, setResult] = useState<TimetableExtractionResult>();
   const [errorMessage, setErrorMessage] = useState("");
+  const [localHints, setLocalHints] = useState<LocalExtractionHints>();
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const [online, setOnline] = useState(
+    () => typeof navigator === "undefined" || navigator.onLine,
+  );
+
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => {
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    };
+  }, []);
 
   useEffect(
     () => () => {
       abortRef.current?.abort();
+      aiAbortRef.current?.abort();
       void serviceRef.current.cancel();
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     },
@@ -113,6 +137,8 @@ export function TimetableFileUpload({
       setPreviewUrl(URL.createObjectURL(nextFile));
       setEdits(DEFAULT_IMAGE_EDITS);
       setResult(undefined);
+      setLocalHints(undefined);
+      setAiError("");
       setErrorMessage("");
       setMode("READY");
     },
@@ -121,6 +147,7 @@ export function TimetableFileUpload({
 
   const reset = async () => {
     abortRef.current?.abort();
+    aiAbortRef.current?.abort();
     await serviceRef.current.cancel();
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -128,6 +155,8 @@ export function TimetableFileUpload({
     setFile(undefined);
     setPreviewUrl("");
     setResult(undefined);
+    setLocalHints(undefined);
+    setAiError("");
     setErrorMessage("");
     setMode("SELECT");
   };
@@ -145,8 +174,17 @@ export function TimetableFileUpload({
         signal: controller.signal,
         onProgress: setProgress,
       });
-      setResult(nextResult);
-      setMode("PREVIEW");
+      const outcome = evaluateLocalExtraction(nextResult);
+      if (outcome.status === "success") {
+        setResult(nextResult);
+        setMode("PREVIEW");
+      } else {
+        setLocalHints(outcome.hints);
+        setErrorMessage(
+          "AttendSafe could not reliably detect the timetable structure. You can try another image, enter the schedule manually, or use AI to analyse this image online.",
+        );
+        setMode("ERROR");
+      }
     } catch (cause) {
       if (
         cause instanceof TimetableExtractionError &&
@@ -160,10 +198,48 @@ export function TimetableFileUpload({
             ? cause.message
             : "The timetable could not be processed locally.",
         );
+        setLocalHints({
+          warnings: [
+            cause instanceof Error ? cause.message : "Local extraction failed.",
+          ],
+        });
         setMode("ERROR");
       }
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
+    }
+  };
+
+  const extractWithAi = async () => {
+    if (!file || aiBusy || !online) return;
+    const controller = new AbortController();
+    aiAbortRef.current = controller;
+    setAiBusy(true);
+    setAiError("");
+    try {
+      const timetable = await requestAiTimetable(
+        file,
+        localHints,
+        controller.signal,
+      );
+      onReady(aiTimetableToDraft(timetable, timezone), {
+        file,
+        edits,
+        previewUrl,
+        extractionMessage:
+          "AI-assisted extraction. Review each class carefully before saving.",
+      });
+    } catch (cause) {
+      if (!controller.signal.aborted) {
+        setAiError(
+          cause instanceof Error
+            ? cause.message
+            : "AI schedule analysis is temporarily unavailable.",
+        );
+      }
+    } finally {
+      if (aiAbortRef.current === controller) aiAbortRef.current = null;
+      setAiBusy(false);
     }
   };
 
@@ -217,6 +293,12 @@ export function TimetableFileUpload({
         message={errorMessage}
         onRetry={() => void reset()}
         onManual={continueManually}
+        onAi={
+          file && file.type !== "application/pdf" ? extractWithAi : undefined
+        }
+        aiAvailable={online}
+        aiBusy={aiBusy}
+        aiError={aiError}
       />
     );
   }
@@ -343,10 +425,11 @@ export function TimetableFileUpload({
               <div className="flex gap-3">
                 <LockKeyhole className="mt-0.5 size-5 shrink-0" />
                 <div>
-                  <p className="font-extrabold">Processed locally</p>
+                  <p className="font-extrabold">Local by default</p>
                   <p className="mt-1 leading-5 opacity-85">
                     The file, rendered pages, detected structure, and OCR text
-                    stay in this browser and are not uploaded to a server.
+                    stay in this browser unless local extraction fails and you
+                    explicitly consent to AI assistance.
                   </p>
                 </div>
               </div>
@@ -391,12 +474,12 @@ export function TimetableFileUpload({
 
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="bg-surface flex items-center gap-3 rounded-2xl p-4 text-sm">
-          <ShieldCheck className="text-primary size-5" /> No API keys or paid
-          services
+          <ShieldCheck className="text-primary size-5" /> Local extraction is
+          always attempted first
         </div>
         <div className="bg-surface flex items-center gap-3 rounded-2xl p-4 text-sm">
-          <LockKeyhole className="text-primary size-5" /> Nothing uploaded
-          during OCR
+          <LockKeyhole className="text-primary size-5" /> AI upload requires
+          explicit consent
         </div>
         <div className="bg-surface flex items-center gap-3 rounded-2xl p-4 text-sm">
           <ScanSearch className="text-primary size-5" /> Structural detection +

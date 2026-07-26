@@ -315,7 +315,7 @@ export function DataPrivacySettings({ data }: { data: AttendSafeSnapshot }) {
         id="backup-privacy"
         icon={DatabaseBackup}
         title="Local data and backups"
-        description="Your timetable and attendance records are stored locally on this device. They are not uploaded to a server. Your data will not automatically appear on another phone, browser, or domain."
+        description="Attendance records and saved timetables stay on this device. Timetable images are processed locally by default; only images you explicitly submit for AI assistance are sent to Google Gemini. Data does not automatically appear on another phone, browser, or domain."
       >
         <DeviceStorageSettings offlineReady={data.settings.offlineReady} />
         <p className="text-muted-foreground mb-4 text-sm leading-6">

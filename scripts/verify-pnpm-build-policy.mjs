@@ -36,10 +36,12 @@ if (allowBuildsIndex < 0) {
 
 const expected = new Map([
   ["@google/genai", false],
+  ["esbuild", true],
   ["protobufjs", false],
   ["sharp", true],
   ["tesseract.js", false],
   ["unrs-resolver", true],
+  ["workerd", true],
 ]);
 for (const [name, allowed] of expected) {
   if (classifications.get(name) !== allowed) {

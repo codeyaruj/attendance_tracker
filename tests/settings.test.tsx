@@ -104,7 +104,7 @@ describe("SettingsScreen", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        /Your timetable and attendance records are stored locally/,
+        /Attendance records and saved timetables stay on this device/,
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Display name" })).toHaveValue(

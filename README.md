@@ -88,7 +88,35 @@ The local pipeline:
 - exposes a collapsible region/cell overlay, granular confidence, and a local JSON diagnostics download that omits image data;
 - always opens the existing editable confirmation flow before IndexedDB is changed.
 
-No upload or extraction API exists. Timetable files, rendered pages, and OCR output are never sent to a server. The original source file is stored in IndexedDB only after the user explicitly confirms the timetable, matching AttendSafe’s existing backup and reference behavior.
+Local extraction is always attempted first. If it fails or produces an unusable result, the user may explicitly consent to send only the selected timetable image and bounded extraction hints to the same-origin AI fallback. Profiles, attendance, saved timetables, backups, and skip-planner data are never included. The original source file is stored in IndexedDB only after the user explicitly confirms the timetable, matching AttendSafe’s existing backup and reference behavior.
+
+## Gemini timetable fallback
+
+The optional fallback is a Cloudflare Pages Function at `POST /api/timetable/analyse`. It uses `@google/genai` only inside the Function, requests schema-constrained JSON, validates and normalises the response independently, and maps it into the existing editable timetable confirmation flow. No AI result is saved before confirmation, and builds, tests, local extraction, and manual entry do not require a Gemini key.
+
+Create an ignored `.dev.vars` file in the repository root for local Pages development:
+
+```text
+GEMINI_API_KEY=PASTE_THE_REAL_KEY_HERE
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+`GEMINI_MODEL` is optional; the server defaults to `gemini-2.5-flash`. Run the static app and Pages Function together with:
+
+```bash
+pnpm dev:pages
+```
+
+Ordinary `pnpm dev` serves the Next.js client but does not execute the root Pages Function. Automated tests inject or route mocked provider responses and never contact Google. Function error codes include `AI_NOT_CONFIGURED`, `AI_RATE_LIMITED`, `AI_TIMEOUT`, `AI_PROVIDER_ERROR`, `AI_INVALID_RESPONSE`, `IMAGE_TOO_LARGE`, and `NO_TIMETABLE_DETECTED`.
+
+Common fallback errors:
+
+- `AI_NOT_CONFIGURED`: add `GEMINI_API_KEY` to `.dev.vars`, or add it as an encrypted Cloudflare Pages secret for the relevant Production/Preview environment and redeploy.
+- `AI_RATE_LIMITED`: inspect Gemini usage and Cloudflare request volume, then wait or adjust the applicable quota/protection.
+- `AI_TIMEOUT` or `AI_PROVIDER_ERROR`: check the Pages Function logs and provider status, then retry manually; AttendSafe never retries automatically.
+- `AI_INVALID_RESPONSE`: the provider returned data that failed the shared schema or logical validation; retry or use manual entry.
+- `IMAGE_TOO_LARGE`: choose a JPEG, PNG, or WebP image no larger than 8 MiB.
+- `NO_TIMETABLE_DETECTED`: use a clearer crop/image or enter the schedule manually.
 
 `pnpm install`, `pnpm dev`, and `pnpm build` prepare self-hosted worker assets under `public/ocr-assets/`. The generated assets are approximately 17 MB: about 12 MB of Tesseract core variants, a 2.8 MB compressed English model, a 2.1 MB PDF.js worker, and a 128 KB Tesseract worker. They are fetched from the same application origin and cached only when extraction first needs them. No OpenCV dependency was added: structural vision is compiled application code using Canvas and typed arrays. The first timetable scan therefore requires internet access; later scans can work offline after every required OCR/PDF asset has downloaded successfully.
 
@@ -199,7 +227,7 @@ NEXT_PUBLIC_SITE_URL=https://your-project.pages.dev pnpm build
 pnpm start
 ```
 
-The complete site is written to `out/`; no Node.js process is required after deployment. There are no API routes, server actions, middleware, sessions, remote extraction calls, or cloud database bindings.
+The complete static site is written to `out/`; Cloudflare Pages serves it together with the root `functions/` route. There are no Next.js API routes, server actions, sessions, or cloud database bindings. The optional Function is invoked only after explicit AI consent.
 
 Cloudflare Pages configuration:
 
@@ -208,9 +236,10 @@ Cloudflare Pages configuration:
 3. Set the build command to `pnpm build`.
 4. Set the output directory to `out`.
 5. Set `NEXT_PUBLIC_SITE_URL` to the project's public HTTPS URL, including a generated `pages.dev` URL when no custom domain is used.
-6. Deploy and verify route refreshes, installability, offline loading, OCR/PDF workers, and headers at the generated HTTPS address.
+6. Add the encrypted `GEMINI_API_KEY` secret to Production (and separately to Preview if desired). Optionally set the non-secret `GEMINI_MODEL` variable.
+7. Deploy and verify route refreshes, `/api/timetable/analyse`, installability, offline loading, OCR/PDF workers, and headers at the generated HTTPS address.
 
-No Cloudflare Worker, paid hosting plan, custom domain, or runtime environment variable is required. `NEXT_PUBLIC_SITE_URL` is build-time metadata only. If it is missing from a production build, AttendSafe omits the metadata base instead of embedding localhost.
+The application remains usable without the optional Gemini secret; the Function returns `AI_NOT_CONFIGURED` while every local feature continues working. `NEXT_PUBLIC_SITE_URL` is build-time metadata only. If it is missing from a production build, AttendSafe omits the metadata base instead of embedding localhost.
 
 Use one permanent origin for real records. `localhost`, preview deployments, the permanent `pages.dev` hostname, a custom domain, different browsers, and different devices each have separate IndexedDB storage. Changing any of them does not migrate data; export a backup before moving.
 

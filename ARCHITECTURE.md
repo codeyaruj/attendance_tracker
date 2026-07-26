@@ -1,6 +1,6 @@
 # AttendSafe architecture
 
-AttendSafe is a static Next.js application exported to `out/`. Cloudflare Pages hosts only HTML, CSS, JavaScript, the manifest, icons, service worker, and self-hosted PDF.js/Tesseract.js resources. No application backend, account system, cloud database, server-side attendance storage, remote OCR, or paid runtime is present.
+AttendSafe is a static Next.js application exported to `out/`. Cloudflare Pages hosts HTML, CSS, JavaScript, the manifest, icons, service worker, self-hosted PDF.js/Tesseract.js resources, and one optional consent-gated timetable-analysis Function. No account system, cloud database, or server-side attendance storage is present.
 
 ## Local data
 
@@ -16,7 +16,8 @@ Post-onboarding surfaces should prioritise user data, actions, warnings, and con
 
 ```text
 Static Cloudflare Pages origin
-        ↓ app files only
+        ├─ app files
+        └─ /api/timetable/analyse → Gemini (only after explicit consent)
 Browser / installed PWA
         ├─ Dexie → IndexedDB (personal records)
         ├─ backup validator → local JSON download/import

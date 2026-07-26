@@ -19,6 +19,7 @@ const common = [
   ["verify:security"],
   ["verify:build-policy"],
   ["verify:assets"],
+  ["verify:functions"],
 ];
 const releaseOnly = [
   ["audit:dependencies"],

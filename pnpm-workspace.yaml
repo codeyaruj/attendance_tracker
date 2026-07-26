@@ -10,7 +10,9 @@ overrides:
 
 allowBuilds:
   "@google/genai": false
+  esbuild: true
   protobufjs: false
   sharp: true
   tesseract.js: false
   unrs-resolver: true
+  workerd: true
