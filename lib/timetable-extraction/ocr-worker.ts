@@ -23,6 +23,7 @@ interface TesseractBlock {
 }
 
 interface TesseractWorkerLike {
+  setParameters(parameters: Record<string, string>): Promise<unknown>;
   recognize(
     image: HTMLCanvasElement,
     options: Record<string, never>,
@@ -38,6 +39,13 @@ export interface OcrWorker {
     canvas: HTMLCanvasElement,
     pageIndex: number,
     pageCount: number,
+    signal?: AbortSignal,
+  ): Promise<OcrPageResult>;
+  recognizeCell?(
+    canvas: HTMLCanvasElement,
+    pageIndex: number,
+    pageCount: number,
+    mode: "HEADER" | "BLOCK" | "SPARSE",
     signal?: AbortSignal,
   ): Promise<OcrPageResult>;
   terminate(): Promise<void>;
@@ -116,6 +124,7 @@ export async function createLocalOcrWorker(
       throwIfCancelled(signal);
       activePage = pageIndex;
       activePageCount = pageCount;
+      await worker.setParameters({ tessedit_pageseg_mode: "3" });
       const onAbort = () => void terminate();
       signal?.addEventListener("abort", onAbort, { once: true });
       let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -156,6 +165,29 @@ export async function createLocalOcrWorker(
         if (timeout) clearTimeout(timeout);
         signal?.removeEventListener("abort", onAbort);
       }
+    },
+    async recognizeCell(canvas, pageIndex, pageCount, mode, signal) {
+      throwIfCancelled(signal);
+      activePage = pageIndex;
+      activePageCount = pageCount;
+      await worker.setParameters({
+        tessedit_pageseg_mode:
+          mode === "HEADER" ? "7" : mode === "SPARSE" ? "11" : "6",
+      });
+      const result = await worker.recognize(
+        canvas,
+        {},
+        { text: true, blocks: true },
+      );
+      throwIfCancelled(signal);
+      return {
+        pageIndex,
+        text: result.data.text,
+        confidence: result.data.confidence,
+        width: canvas.width,
+        height: canvas.height,
+        words: flattenWords(result.data.blocks, pageIndex),
+      };
     },
     terminate,
   };

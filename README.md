@@ -74,22 +74,23 @@ pnpm exec playwright install chromium
 
 ## Free, local timetable extraction
 
-Manual entry, pasted text, demo setup, and OCR work without secrets, accounts, APIs, or paid services. PNG, JPEG, WebP, and PDFs of up to 10 MB can be read entirely inside the browser. PDFs are limited to five pages and are rendered sequentially with PDF.js. Tesseract.js runs OCR in a reusable Web Worker, retaining word coordinates so AttendSafe can conservatively reconstruct rows and columns.
+Manual entry, pasted text, demo setup, and table-aware extraction work without secrets, accounts, APIs, or paid services. PNG, JPEG, WebP, and PDFs of up to 10 MB are read entirely inside the browser. Selectable PDFs use positioned PDF.js text first; scanned pages and images use local Canvas/typed-array grid detection before a reusable Tesseract.js worker reads individual cells. OCR recognizes text, while structural parsing independently detects table regions, boundaries, merged spans, headers, and legends.
 
 The local pipeline:
 
 - checks the extension, MIME type, file size, and magic bytes before expensive processing;
 - rejects corrupt, encrypted, empty, oversized, or excessive-page PDFs;
 - corrects browser-supported image orientation, bounds canvas dimensions and pixels, then applies deterministic greyscale, contrast, and mild sharpening;
-- processes only one rendered page and one OCR job at a time;
+- processes only one rendered page and one cell OCR job at a time;
 - enforces page, word, cell, per-page time, and total time limits;
 - supports cancellation and releases workers, canvases, object URLs, and PDF resources;
-- groups OCR words by coordinates and marks uncertain timetable cells for user review;
+- detects horizontal and vertical grid structure before OCR, preserves raw cell text, and marks uncertain fields for user review;
+- exposes a collapsible region/cell overlay, granular confidence, and a local JSON diagnostics download that omits image data;
 - always opens the existing editable confirmation flow before IndexedDB is changed.
 
 No upload or extraction API exists. Timetable files, rendered pages, and OCR output are never sent to a server. The original source file is stored in IndexedDB only after the user explicitly confirms the timetable, matching AttendSafe’s existing backup and reference behavior.
 
-`pnpm install`, `pnpm dev`, and `pnpm build` prepare self-hosted worker assets under `public/ocr-assets/`. The generated assets are approximately 17 MB: about 12 MB of Tesseract core variants, a 2.8 MB compressed English model, a 2.1 MB PDF.js worker, and a 128 KB Tesseract worker. They are fetched from the same application origin and cached only when OCR first needs them. The first timetable scan therefore requires internet access; later scans can work offline after every required asset has downloaded successfully.
+`pnpm install`, `pnpm dev`, and `pnpm build` prepare self-hosted worker assets under `public/ocr-assets/`. The generated assets are approximately 17 MB: about 12 MB of Tesseract core variants, a 2.8 MB compressed English model, a 2.1 MB PDF.js worker, and a 128 KB Tesseract worker. They are fetched from the same application origin and cached only when extraction first needs them. No OpenCV dependency was added: structural vision is compiled application code using Canvas and typed arrays. The first timetable scan therefore requires internet access; later scans can work offline after every required OCR/PDF asset has downloaded successfully.
 
 ## Local data model
 
@@ -256,7 +257,7 @@ pnpm start
 ## Known limitations
 
 - AttendSafe has no account or cloud-sync layer; profiles and attendance are scoped to one browser origin and device.
-- OCR accuracy depends on image quality, table layout, fonts, and browser resources. Merged cells, handwriting, unusual rotations, dense electives, and ambiguous abbreviations may require substantial manual correction.
+- Extraction accuracy depends on image quality, table layout, fonts, and browser resources. Strong perspective distortion, handwriting, borderless layouts, rotated cell text, dense electives, and ambiguous abbreviations may require substantial manual correction. The diagnostic overlay helps distinguish grid-detection, OCR, and parsing errors; it is not a claim of certainty.
 - Local OCR is CPU- and memory-intensive. Files are bounded to 10 MB, PDFs to five pages, rendered canvases to four million pixels, and extraction to one page/job at a time.
 - Browsers may evict site storage under device pressure. JSON backups are the durable portability and recovery mechanism; backups containing source-image blobs can be comparatively large.
 - Offline use is available after a successful production visit has warmed the application shell. OCR works offline only after its first complete asset download.

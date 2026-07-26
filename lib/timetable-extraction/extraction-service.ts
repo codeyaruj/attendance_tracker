@@ -7,6 +7,13 @@ import { preprocessCanvas } from "./image-preprocessing";
 import { createLocalOcrWorker, type OcrWorker } from "./ocr-worker";
 import { openLocalPdf, type LocalPdfDocument } from "./pdf-renderer";
 import {
+  analyzeTableImage,
+  canvasPixelBuffer,
+  cropCellCanvas,
+  type TableVisionResult,
+} from "./table-vision";
+import { calculateExtractionConfidence } from "./semantic-parsing";
+import {
   assertUsefulExtraction,
   reconstructTimetablePages,
 } from "./timetable-parser";
@@ -28,6 +35,7 @@ export interface ExtractionDependencies {
   preprocess: typeof preprocessCanvas;
   createOcrWorker: typeof createLocalOcrWorker;
   reconstruct: typeof reconstructTimetablePages;
+  analyze?: typeof analyzeTableImage;
 }
 
 const browserDependencies: ExtractionDependencies = {
@@ -38,6 +46,7 @@ const browserDependencies: ExtractionDependencies = {
   preprocess: preprocessCanvas,
   createOcrWorker: createLocalOcrWorker,
   reconstruct: reconstructTimetablePages,
+  analyze: analyzeTableImage,
 };
 
 export class LocalTimetableExtractionService {
@@ -90,17 +99,26 @@ export class LocalTimetableExtractionService {
         pdf = await this.dependencies.openPdf(file, controller.signal);
         pageCount = pdf.pageCount;
       }
-      options.onProgress?.({
-        stage: "STARTING_OCR",
-        progress: 0.15,
-        pageCount,
-      });
-      this.worker = await this.dependencies.createOcrWorker({
-        onProgress: options.onProgress,
-      });
       const ocrPages: OcrPageResult[] = [];
       for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
         throwIfCancelled(controller.signal);
+        if (validated.kind === "PDF" && pdf?.extractPositionedText) {
+          options.onProgress?.({
+            stage: "FINDING_TIMETABLE",
+            progress: pageIndex / pageCount,
+            pageIndex,
+            pageCount,
+            detail: "Checking the PDF text layer before using OCR.",
+          });
+          const positioned = await pdf.extractPositionedText(
+            pageIndex,
+            controller.signal,
+          );
+          if (positioned) {
+            ocrPages.push(positioned);
+            continue;
+          }
+        }
         options.onProgress?.({
           stage:
             validated.kind === "PDF" ? "RENDERING_PAGE" : "PREPARING_IMAGE",
@@ -116,6 +134,150 @@ export class LocalTimetableExtractionService {
                 options.imageEdits,
                 controller.signal,
               );
+        let previewDataUrl: string | undefined;
+        if (!navigator.userAgent.includes("jsdom")) {
+          try {
+            previewDataUrl = canvas.canvas.toDataURL("image/jpeg", 0.72);
+          } catch {
+            // Diagnostics remain useful when a browser cannot serialize a canvas.
+          }
+        }
+        let vision: TableVisionResult | undefined;
+        if (this.dependencies.analyze) {
+          options.onProgress?.({
+            stage: "FINDING_TIMETABLE",
+            progress: (pageIndex + 0.15) / pageCount,
+            pageIndex,
+            pageCount,
+          });
+          try {
+            vision = this.dependencies.analyze(
+              canvasPixelBuffer(canvas.canvas),
+            );
+          } catch {
+            vision = undefined;
+          }
+        }
+        options.onProgress?.({
+          stage: "DETECTING_GRID",
+          progress: (pageIndex + 0.25) / pageCount,
+          pageIndex,
+          pageCount,
+          detail: vision?.primaryGrid
+            ? `Detected ${vision.primaryGrid.cells.length} logical cells.`
+            : "No reliable grid found; preparing full-page OCR fallback.",
+        });
+        if (vision?.primaryGrid) {
+          if (!this.worker) {
+            options.onProgress?.({
+              stage: "STARTING_OCR",
+              progress: (pageIndex + 0.3) / pageCount,
+              pageIndex,
+              pageCount,
+            });
+            this.worker = await this.dependencies.createOcrWorker({
+              onProgress: options.onProgress,
+            });
+          }
+          const candidateCells = vision.diagnostics.grids
+            .flatMap((grid) => grid.cells)
+            .slice(0, EXTRACTION_LIMITS.maximumCandidateCells);
+          const texts: string[] = [];
+          const words: OcrPageResult["words"] = [];
+          for (
+            let cellIndex = 0;
+            cellIndex < candidateCells.length;
+            cellIndex += 1
+          ) {
+            throwIfCancelled(controller.signal);
+            const cell = candidateCells[cellIndex];
+            options.onProgress?.({
+              stage: "READING_CELLS",
+              progress:
+                (pageIndex + cellIndex / Math.max(1, candidateCells.length)) /
+                pageCount,
+              pageIndex,
+              pageCount,
+              detail: `Reading cell ${cellIndex + 1} of ${candidateCells.length}.`,
+            });
+            const cellCanvas = cropCellCanvas(canvas.canvas, cell.bounds);
+            try {
+              const result = this.worker.recognizeCell
+                ? await this.worker.recognizeCell(
+                    cellCanvas,
+                    pageIndex,
+                    pageCount,
+                    cell.rowStart === 0 || cell.columnStart === 0
+                      ? "HEADER"
+                      : "BLOCK",
+                    controller.signal,
+                  )
+                : await this.worker.recognize(
+                    cellCanvas,
+                    pageIndex,
+                    pageCount,
+                    controller.signal,
+                  );
+              cell.rawText = result.text.trim();
+              cell.ocrConfidence = result.confidence;
+              if (cell.rawText) {
+                texts.push(cell.rawText);
+                words.push({
+                  text: cell.rawText,
+                  confidence: result.confidence,
+                  bbox: cell.bounds,
+                  pageIndex,
+                });
+              }
+            } finally {
+              cellCanvas.width = 0;
+              cellCanvas.height = 0;
+            }
+          }
+          const averageOcr =
+            candidateCells.reduce(
+              (sum, cell) => sum + (cell.ocrConfidence ?? 0),
+              0,
+            ) / Math.max(1, candidateCells.length);
+          const warnings = [];
+          if (Math.min(canvas.canvas.width, canvas.canvas.height) < 700) {
+            warnings.push({
+              code: "LOW_RESOLUTION" as const,
+              message:
+                "This image is low resolution; verify small cell text carefully.",
+            });
+          }
+          ocrPages.push({
+            pageIndex,
+            text: texts.join("\n"),
+            confidence: averageOcr,
+            width: canvas.canvas.width,
+            height: canvas.canvas.height,
+            words,
+            diagnostics: vision.diagnostics,
+            confidenceBreakdown: calculateExtractionConfidence({
+              inputQuality: Math.min(
+                1,
+                Math.min(canvas.canvas.width, canvas.canvas.height) / 900,
+              ),
+              tableDetection: vision.diagnostics.regions[0]?.confidence ?? 0.4,
+              perspectiveCorrection:
+                vision.diagnostics.transforms.find(
+                  (transform) => transform.type === "PERSPECTIVE",
+                )?.confidence ?? 0.4,
+              gridDetection: vision.primaryGrid.confidence,
+              headerParsing: 0.5,
+              cellOCR: averageOcr / 100,
+              legendMapping: vision.legendGrid ? 0.8 : 0.4,
+              semanticParsing: 0.5,
+              warnings,
+            }),
+            previewDataUrl,
+          });
+          canvas.cleanup();
+          canvas = undefined;
+          continue;
+        }
         options.onProgress?.({
           stage: "PREPARING_IMAGE",
           progress: pageIndex / pageCount,
@@ -124,18 +286,48 @@ export class LocalTimetableExtractionService {
         });
         const prepared = await this.dependencies.preprocess(canvas);
         throwIfCancelled(controller.signal);
-        ocrPages.push(
-          await this.worker.recognize(
-            prepared,
+        if (!this.worker) {
+          options.onProgress?.({
+            stage: "STARTING_OCR",
+            progress: (pageIndex + 0.35) / pageCount,
             pageIndex,
             pageCount,
-            controller.signal,
-          ),
+          });
+          this.worker = await this.dependencies.createOcrWorker({
+            onProgress: options.onProgress,
+          });
+        }
+        const fallback = await this.worker.recognize(
+          prepared,
+          pageIndex,
+          pageCount,
+          controller.signal,
         );
+        fallback.previewDataUrl = previewDataUrl;
+        fallback.diagnostics = vision?.diagnostics
+          ? { ...vision.diagnostics, source: "FULL_OCR_FALLBACK" }
+          : {
+              source: "FULL_OCR_FALLBACK",
+              width: fallback.width,
+              height: fallback.height,
+              transforms: [],
+              horizontalLines: [],
+              verticalLines: [],
+              regions: [],
+              grids: [],
+              timings: [],
+            };
+        ocrPages.push(fallback);
         canvas.cleanup();
         canvas = undefined;
       }
 
+      options.onProgress?.({
+        stage: "MATCHING_SUBJECTS",
+        progress: 0.89,
+        pageCount,
+        detail: "Matching headers, subject codes, legends, and merged spans.",
+      });
       options.onProgress?.({
         stage: "RECONSTRUCTING_TIMETABLE",
         progress: 0.92,
@@ -151,12 +343,17 @@ export class LocalTimetableExtractionService {
       return {
         pages,
         totalPageCount: pageCount,
-        warnings:
-          pages.length < pageCount
+        warnings: [
+          ...pages.flatMap(
+            (page) =>
+              page.confidence?.warnings.map((warning) => warning.message) ?? [],
+          ),
+          ...(pages.length < pageCount
             ? [
                 `${pageCount - pages.length} ${pageCount - pages.length === 1 ? "page did" : "pages did"} not contain a recognizable timetable.`,
               ]
-            : [],
+            : []),
+        ],
       };
     } catch (cause) {
       if (controller.signal.aborted) {

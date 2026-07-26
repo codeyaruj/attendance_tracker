@@ -16,6 +16,8 @@
 
 Tests use synthetic stable IDs/names, fixed dates, controlled browser clocks, fresh contexts, reset IndexedDB/Cache Storage/localStorage where appropriate, and no remote OCR/network dependency. Avoid arbitrary sleeps, shared profiles, current-locale assertions, and unstable CSS selectors. Browser tests should fail on unexpected page/console/service-worker errors; document any narrowly allowed browser message.
 
+Table extraction has synthetic coverage for line detection, logical grids, merged cells, fuzzy headers, subject/legend correction, alternatives, breaks, confidence, cancellation, and cleanup. The original JSS reference image was not present in the workspace; copy it unchanged to `tests/fixtures/timetables/jss-ec3-odd-semester-2026-27.jpeg` to enable the conditional structural fixture test. Do not replace it with a fabricated image. Browser E2E tests avoid expensive OCR except for focused asset/worker smoke coverage; real-device camera photos remain part of manual release testing.
+
 Date logic must cover month/year boundaries, leap day, local midnight, and a DST-sensitive timezone when that behavior changes. Object URLs, workers, timers, database connections, and mocks must be released after each test.
 
 ## Coverage policy

@@ -6,6 +6,7 @@ import {
   type NormalizedTimetableDraft,
 } from "@/types";
 import { groupWordsIntoLines, normalizeOcrWords } from "./text-grouping";
+import { parseStructuredPage } from "./structured-timetable-parser";
 import {
   EXTRACTION_LIMITS,
   TimetableExtractionError,
@@ -416,7 +417,8 @@ export function reconstructTimetablePages(
   timezone: string,
 ): ExtractedPage[] {
   return pages.flatMap((page) => {
-    const draft = parsePageDraft(page, timezone);
+    const structured = parseStructuredPage(page, timezone);
+    const draft = structured?.draft ?? parsePageDraft(page, timezone);
     return draft
       ? [
           {
@@ -425,6 +427,9 @@ export function reconstructTimetablePages(
             draft,
             rawTextPreview: page.text.replace(/\s+/g, " ").trim().slice(0, 300),
             detectedCellCount: draft.timetableSlots.length,
+            diagnostics: page.diagnostics,
+            confidence: structured?.confidence ?? page.confidenceBreakdown,
+            previewDataUrl: page.previewDataUrl,
           },
         ]
       : [];
@@ -484,15 +489,6 @@ export function assertUsefulExtraction(pages: readonly ExtractedPage[]): void {
     throw new TimetableExtractionError(
       "NO_TIMETABLE",
       "OCR finished, but no timetable-like rows and columns were detected. Try a clearer image or enter it manually.",
-    );
-  }
-  const confidence =
-    pages.reduce((total, page) => total + page.draft.overallConfidence, 0) /
-    pages.length;
-  if (confidence < 0.35) {
-    throw new TimetableExtractionError(
-      "LOW_CONFIDENCE",
-      "The timetable text was too uncertain to build a safe preview. Try a clearer file or enter it manually.",
     );
   }
 }

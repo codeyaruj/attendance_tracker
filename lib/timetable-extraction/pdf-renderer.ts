@@ -4,6 +4,7 @@ import {
   throwIfCancelled,
 } from "./types";
 import type { CanvasResource } from "./image-loader";
+import type { OcrPageResult, OcrWord } from "./types";
 
 interface PdfViewport {
   width: number;
@@ -13,6 +14,10 @@ interface PdfViewport {
 export interface LocalPdfDocument {
   readonly pageCount: number;
   renderPage(pageIndex: number, signal?: AbortSignal): Promise<CanvasResource>;
+  extractPositionedText?(
+    pageIndex: number,
+    signal?: AbortSignal,
+  ): Promise<OcrPageResult | undefined>;
   destroy(): Promise<void>;
 }
 
@@ -87,6 +92,53 @@ export async function openLocalPdf(
     }
     return {
       pageCount: document.numPages,
+      async extractPositionedText(pageIndex, pageSignal) {
+        throwIfCancelled(pageSignal);
+        const page = await document.getPage(pageIndex + 1);
+        try {
+          const viewport = page.getViewport({ scale: 1 });
+          const content = await page.getTextContent();
+          throwIfCancelled(pageSignal);
+          const words: OcrWord[] = [];
+          for (const item of content.items) {
+            if (!("str" in item) || !("transform" in item)) continue;
+            const text = item.str.trim();
+            if (!text) continue;
+            const x0 = item.transform[4];
+            const itemHeight = Math.max(1, Math.abs(item.height));
+            const y1 = viewport.height - item.transform[5] + itemHeight * 0.2;
+            const width = Math.max(1, item.width);
+            words.push({
+              text,
+              confidence: 99,
+              bbox: { x0, y0: y1 - itemHeight, x1: x0 + width, y1 },
+              pageIndex,
+            });
+          }
+          if (words.length < 6) return undefined;
+          return {
+            pageIndex,
+            text: words.map((word) => word.text).join(" "),
+            confidence: 99,
+            width: viewport.width,
+            height: viewport.height,
+            words,
+            diagnostics: {
+              source: "PDF_POSITIONED_TEXT",
+              width: viewport.width,
+              height: viewport.height,
+              transforms: [],
+              horizontalLines: [],
+              verticalLines: [],
+              regions: [],
+              grids: [],
+              timings: [],
+            },
+          };
+        } finally {
+          page.cleanup();
+        }
+      },
       async renderPage(pageIndex, pageSignal) {
         throwIfCancelled(pageSignal);
         const page = await document.getPage(pageIndex + 1);

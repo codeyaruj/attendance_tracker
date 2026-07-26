@@ -18,7 +18,12 @@ export type ExtractionStage =
   | "LOADING_PDF"
   | "RENDERING_PAGE"
   | "PREPARING_IMAGE"
+  | "FINDING_TIMETABLE"
+  | "CORRECTING_PERSPECTIVE"
+  | "DETECTING_GRID"
   | "STARTING_OCR"
+  | "READING_CELLS"
+  | "MATCHING_SUBJECTS"
   | "READING_PAGE"
   | "RECONSTRUCTING_TIMETABLE"
   | "PREPARING_PREVIEW";
@@ -38,6 +43,106 @@ export interface BoundingBox {
   y1: number;
 }
 
+export interface DetectedLine {
+  orientation: "horizontal" | "vertical";
+  coordinate: number;
+  start: number;
+  end: number;
+  thickness: number;
+  confidence: number;
+}
+
+export interface DetectedRegion {
+  id: string;
+  kind: "PRIMARY_TIMETABLE" | "LEGEND" | "UNKNOWN_TABLE";
+  bounds: BoundingBox;
+  horizontalLineCount: number;
+  verticalLineCount: number;
+  intersectionDensity: number;
+  confidence: number;
+}
+
+export interface ParsedCellEntry {
+  rawText: string;
+  subjectCode?: string;
+  correctedSubjectCode?: string;
+  correctionReason?: string;
+  subjectName?: string;
+  facultyInitials?: string[];
+  facultyNames?: string[];
+  room?: string;
+  batch?: string;
+  group?: string;
+  type: "lecture" | "lab" | "project" | "break" | "unknown";
+  confidence: number;
+}
+
+export interface DetectedCell {
+  id: string;
+  rowStart: number;
+  rowSpan: number;
+  columnStart: number;
+  columnSpan: number;
+  bounds: BoundingBox;
+  rawText?: string;
+  ocrConfidence?: number;
+  structuralConfidence: number;
+  entries?: ParsedCellEntry[];
+}
+
+export interface LogicalGrid {
+  regionId: string;
+  rowBoundaries: number[];
+  columnBoundaries: number[];
+  cells: DetectedCell[];
+  confidence: number;
+}
+
+export interface ExtractionWarning {
+  code:
+    | "LOW_RESOLUTION"
+    | "PERSPECTIVE_FALLBACK"
+    | "BROKEN_GRID"
+    | "LOW_OCR"
+    | "PARTIAL_RESULT";
+  message: string;
+  cellId?: string;
+}
+
+export interface ExtractionConfidence {
+  inputQuality: number;
+  tableDetection: number;
+  perspectiveCorrection: number;
+  gridDetection: number;
+  headerParsing: number;
+  cellOCR: number;
+  legendMapping: number;
+  semanticParsing: number;
+  overall: number;
+  warnings: ExtractionWarning[];
+}
+
+export interface PipelineTiming {
+  stage: string;
+  durationMs: number;
+}
+
+export interface PageDiagnostics {
+  source: "IMAGE_GRID" | "PDF_POSITIONED_TEXT" | "FULL_OCR_FALLBACK";
+  width: number;
+  height: number;
+  transforms: Array<{
+    type: "EXIF_ORIENTATION" | "ROTATION" | "DESKEW" | "CROP" | "PERSPECTIVE";
+    description: string;
+    confidence: number;
+  }>;
+  horizontalLines: DetectedLine[];
+  verticalLines: DetectedLine[];
+  regions: DetectedRegion[];
+  grids: LogicalGrid[];
+  timings: PipelineTiming[];
+}
+
 export interface OcrWord {
   text: string;
   confidence: number;
@@ -52,6 +157,9 @@ export interface OcrPageResult {
   width: number;
   height: number;
   words: OcrWord[];
+  diagnostics?: PageDiagnostics;
+  confidenceBreakdown?: ExtractionConfidence;
+  previewDataUrl?: string;
 }
 
 export interface VisualLine {
@@ -68,6 +176,9 @@ export interface ExtractedPage {
   draft: NormalizedTimetableDraft;
   rawTextPreview: string;
   detectedCellCount: number;
+  diagnostics?: PageDiagnostics;
+  confidence?: ExtractionConfidence;
+  previewDataUrl?: string;
 }
 
 export interface TimetableExtractionResult {

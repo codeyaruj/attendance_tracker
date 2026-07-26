@@ -38,6 +38,7 @@ function dependencies(options: {
   pageCount?: number;
   recognize?: OcrWorker["recognize"];
   openPdfError?: Error;
+  positionedText?: OcrPageResult;
 }) {
   const cleanup = vi.fn();
   const terminate = vi.fn(async () => undefined);
@@ -69,6 +70,11 @@ function dependencies(options: {
       if (options.openPdfError) throw options.openPdfError;
       return {
         pageCount: options.pageCount ?? 2,
+        ...(options.positionedText
+          ? {
+              extractPositionedText: vi.fn(async () => options.positionedText),
+            }
+          : {}),
         async renderPage(pageIndex: number) {
           order.push(`render-${pageIndex}`);
           const canvas = document.createElement("canvas");
@@ -167,5 +173,30 @@ describe("local extraction service", () => {
       service.extract(sourceFile(), { timezone: "Asia/Kolkata" }),
     ).rejects.toMatchObject({ code: "CORRUPT_PDF" });
     expect(mocks.values.createOcrWorker).not.toHaveBeenCalled();
+  });
+
+  it("uses positioned PDF text without rendering or starting OCR", async () => {
+    const positionedText: OcrPageResult = {
+      pageIndex: 0,
+      text: "Monday 09:00-10:00 BEC501",
+      confidence: 99,
+      width: 600,
+      height: 800,
+      words: [],
+    };
+    const mocks = dependencies({
+      pageCount: 1,
+      positionedText,
+    });
+    const service = new LocalTimetableExtractionService(mocks.values);
+
+    await service.extract(sourceFile(), { timezone: "Asia/Kolkata" });
+
+    expect(mocks.order).toEqual([]);
+    expect(mocks.values.createOcrWorker).not.toHaveBeenCalled();
+    expect(mocks.values.reconstruct).toHaveBeenCalledWith(
+      [positionedText],
+      "Asia/Kolkata",
+    );
   });
 });

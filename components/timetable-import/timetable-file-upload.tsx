@@ -204,7 +204,7 @@ export function TimetableFileUpload({
             edits,
             previewUrl,
             extractionMessage:
-              "Extracted locally in this browser with Tesseract OCR.",
+              "Extracted locally with table detection, positioned PDF text, and Tesseract cell OCR.",
           })
         }
       />
@@ -232,8 +232,8 @@ export function TimetableFileUpload({
             Read your schedule on this device
           </h1>
           <p className="text-muted-foreground mt-2 max-w-2xl text-sm leading-6">
-            OCR accuracy varies, so every result opens in an editable review
-            before anything is saved.
+            Table detection and OCR are probabilistic, so every result opens in
+            an editable review before anything is saved.
           </p>
         </div>
         <Button variant="ghost" onClick={onBack}>
@@ -345,8 +345,8 @@ export function TimetableFileUpload({
                 <div>
                   <p className="font-extrabold">Processed locally</p>
                   <p className="mt-1 leading-5 opacity-85">
-                    The file, rendered pages, and OCR text stay in this browser
-                    and are not uploaded to a server.
+                    The file, rendered pages, detected structure, and OCR text
+                    stay in this browser and are not uploaded to a server.
                   </p>
                 </div>
               </div>
@@ -399,8 +399,8 @@ export function TimetableFileUpload({
           during OCR
         </div>
         <div className="bg-surface flex items-center gap-3 rounded-2xl p-4 text-sm">
-          <ScanSearch className="text-primary size-5" /> Review required before
-          saving
+          <ScanSearch className="text-primary size-5" /> Structural detection +
+          review before saving
         </div>
       </div>
     </div>

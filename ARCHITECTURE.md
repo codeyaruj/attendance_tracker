@@ -18,11 +18,15 @@ Static Cloudflare Pages origin
 Browser / installed PWA
         ├─ Dexie → IndexedDB (personal records)
         ├─ backup validator → local JSON download/import
-        ├─ PDF.js + Tesseract.js workers → local timetable review
+        ├─ Canvas table vision + PDF.js + Tesseract.js → local timetable review
         └─ service worker → Cache Storage (static files only)
 ```
 
-OCR validates and bounds user files, renders PDFs sequentially, and reconstructs timetable candidates locally. The user reviews the result before repository writes. Backup imports are bounded, strictly validated, migrated, previewed, confirmed, and applied as one replace transaction; failure rolls back.
+Timetable extraction validates and bounds user files, then separates structural analysis from OCR. Selectable PDFs use positioned PDF.js text before raster work. Images and scanned PDFs become Canvas pixel buffers; adaptive thresholding, scale-relative horizontal/vertical line runs, intersection scoring, coordinate clustering, and separator continuity produce table regions, logical cells, and row/column spans. A single reusable Tesseract worker reads bounded cells with header/block page-segmentation modes. When no trustworthy grid exists, coordinate-aware full-page OCR remains an identified fallback.
+
+The computer-vision implementation uses browser Canvas and typed arrays rather than OpenCV.js, so there is no additional WASM dependency or OpenCV asset setup. Detection metadata, transforms, timings, raw cell text, and granular confidence scores feed an optional diagnostic overlay/export. Files, pixels, text, and diagnostics stay in the browser. The user must review and explicitly confirm the draft before the existing repository transaction writes to IndexedDB.
+
+Perspective handling is conservative: the outer grid is evaluated and an axis-aligned crop is retained when a safe projective warp cannot be established. Strong keystone distortion, curved pages, handwriting, borderless tables, rotated text, and dense nested legends can still require a straighter photo or manual correction; extraction is probabilistic, not authoritative.
 
 ## PWA and cache policy
 
