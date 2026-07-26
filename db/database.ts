@@ -243,6 +243,22 @@ export async function deleteLocalDatabaseAfterConfirmation(
   if (databaseSingleton === database) databaseSingleton = undefined;
 }
 
+export async function retryDatabaseConnection(): Promise<DatabaseHealth> {
+  databaseSingleton?.close();
+  databaseSingleton = undefined;
+  return checkDatabaseHealth();
+}
+
+export async function resetCorruptDatabase(
+  confirmationText: string,
+): Promise<void> {
+  if (confirmationText !== "RESET") {
+    throw new Error('Type "RESET" to confirm deletion of all local data.');
+  }
+  const database = databaseSingleton ?? getAttendSafeDatabase();
+  await deleteLocalDatabaseAfterConfirmation(database, true);
+}
+
 export async function runDatabaseTransaction<T>(
   database: AttendSafeDatabase,
   mode: TransactionMode,

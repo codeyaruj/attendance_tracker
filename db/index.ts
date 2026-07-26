@@ -15,6 +15,8 @@ import type {
 import {
   checkDatabaseHealth,
   getAttendSafeDatabase,
+  resetCorruptDatabase,
+  retryDatabaseConnection,
   type AttendSafeDatabase,
   type DatabaseHealth,
 } from "./database";
@@ -73,7 +75,7 @@ export type MarkAttendanceStatus =
   AttendanceStatus | "CANCELLED" | "NOT_CONDUCTED";
 
 export interface ImportOptions {
-  mode?: "MERGE" | "REPLACE";
+  mode?: "REPLACE";
 }
 
 export type StoreUploadReferenceInput = Omit<
@@ -294,6 +296,36 @@ export class AttendSafeRepository {
   ): Promise<void> {
     const { importBackup } = await import("@/lib/backup");
     await importBackup(this.database(), backup, options);
+  }
+
+  async prepareBackupFile(
+    file: File,
+    options?: import("@/lib/backup").PrepareBackupOptions,
+  ): Promise<import("@/lib/backup").PreparedBackupImport> {
+    const { prepareBackupFile } = await import("@/lib/backup");
+    return prepareBackupFile(file, options);
+  }
+
+  async importPreparedBackup(
+    prepared: import("@/lib/backup").PreparedBackupImport,
+  ): Promise<void> {
+    const { importPreparedBackup } = await import("@/lib/backup");
+    await importPreparedBackup(this.database(), prepared, { mode: "REPLACE" });
+  }
+
+  retryDatabase(): Promise<DatabaseHealth> {
+    return retryDatabaseConnection();
+  }
+
+  resetCorruptDatabase(confirmationText: string): Promise<void> {
+    return resetCorruptDatabase(confirmationText);
+  }
+
+  async exportRecoverableData(): Promise<
+    import("@/lib/backup").RecoveryExportResult
+  > {
+    const { exportRecoverableDatabase } = await import("@/lib/backup");
+    return exportRecoverableDatabase(this.database());
   }
 
   async exportSubjectCsv(

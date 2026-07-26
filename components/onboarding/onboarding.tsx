@@ -21,6 +21,7 @@ import { Field, Input } from "@/components/ui/form-controls";
 import { attendSafeRepository } from "@/db";
 import type { ManualTimetableInput } from "@/db";
 import { useAttendSafeData } from "@/hooks/use-attendsafe-data";
+import { AttendanceUnavailableState } from "@/components/attendance/data-state";
 import { parseSemesterExceptionEntries } from "@/lib/academic-exception-input";
 import type { NormalizedTimetableDraft } from "@/types";
 import { DAYS_OF_WEEK } from "@/types";
@@ -140,7 +141,7 @@ function timetableInput(
 
 export function Onboarding() {
   const router = useRouter();
-  const { data, loading, availability } = useAttendSafeData();
+  const { data, loading, availability, error, refresh } = useAttendSafeData();
   const [stage, setStage] = useState<Stage>("CHOICE");
   const [path, setPath] = useState<PathChoice>("MANUAL");
   const [setup, setSetup] = useState<ProfileSetupValues>();
@@ -160,6 +161,22 @@ export function Onboarding() {
       router.replace("/today");
     }
   }, [availability, data?.activeProfile, data?.activeSemester, router, stage]);
+
+  if (
+    stage === "CHOICE" &&
+    availability !== "CHECKING" &&
+    availability !== "READY"
+  ) {
+    return (
+      <main className="bg-background grid min-h-dvh place-items-center p-6">
+        <AttendanceUnavailableState
+          kind={availability}
+          message={error?.message}
+          onRetry={refresh}
+        />
+      </main>
+    );
+  }
 
   if (
     stage === "CHOICE" &&

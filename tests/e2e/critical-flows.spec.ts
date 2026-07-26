@@ -421,13 +421,47 @@ test("a JSON backup can be exported, reset, and re-imported", async ({
   await page
     .getByLabel("Choose AttendSafe JSON backup")
     .setInputFiles(backupPath);
-  await expect(page.getByText("Backup validated and imported")).toBeVisible();
+  await expect(page.getByTestId("backup-import-preview")).toBeVisible();
+  await page.getByLabel(/Type "REPLACE"/).fill("REPLACE");
+  await page.getByTestId("confirm-backup-import").click();
+  await expect(
+    page.getByText(/Imported .* subjects and .* attendance records/),
+  ).toBeVisible();
   await expect
     .poll(async () => (await readStore(page, "profiles")).length)
     .toBe(1);
 
   await page.goto("/dashboard");
   await expect(page.getByTestId("subject-card-list")).toBeVisible();
+});
+
+test("backup import previews and transactionally replaces local data", async ({
+  page,
+}, testInfo) => {
+  await loadDemo(page);
+  await page.goto("/settings");
+  await expect(page.getByTestId("settings-page")).toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "All profiles" }).click();
+  const download = await downloadPromise;
+  const backupPath = testInfo.outputPath("preview-backup.json");
+  await download.saveAs(backupPath);
+
+  await page
+    .getByLabel("Choose AttendSafe JSON backup")
+    .setInputFiles(backupPath);
+  await expect(page.getByTestId("backup-import-preview")).toBeVisible();
+  await expect(page.getByText(/No backup data is uploaded/)).toBeVisible();
+  await page.getByLabel(/Type "REPLACE"/).fill("REPLACE");
+  await page.getByTestId("confirm-backup-import").click();
+  await expect(
+    page.getByText(/Imported .* subjects and .* attendance records/),
+  ).toBeVisible();
+  await expect(page.getByTestId("backup-import-preview")).toBeHidden();
+  await expect
+    .poll(async () => (await readStore(page, "profiles")).length)
+    .toBe(1);
 });
 
 test("a previous attendance record can be corrected from history", async ({

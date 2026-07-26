@@ -123,7 +123,7 @@ function safestDayThisWeek(
 }
 
 export function DashboardScreen() {
-  const { data, loading, availability, error } = useAttendSafeData();
+  const { data, loading, availability, error, refresh } = useAttendSafeData();
   const [sort, setSort] = useState<DashboardSort>("LOWEST");
   const today = isoDateInTimeZone(new Date(), data?.activeProfile?.timezone);
   const attendanceSessions = useMemo(
@@ -147,6 +147,7 @@ export function DashboardScreen() {
       <AttendanceUnavailableState
         kind={availability === "READY" ? "ERROR" : availability}
         message={error?.message}
+        onRetry={refresh}
       />
     );
   }

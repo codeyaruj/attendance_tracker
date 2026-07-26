@@ -33,7 +33,7 @@ const sections = [
 ] as const;
 
 export function SettingsScreen() {
-  const { data, loading, availability, error } = useAttendSafeData();
+  const { data, loading, availability, error, refresh } = useAttendSafeData();
 
   if (loading || availability === "CHECKING") {
     return <AttendanceLoadingState label="Loading local settings" />;
@@ -43,6 +43,7 @@ export function SettingsScreen() {
       <AttendanceUnavailableState
         kind={availability === "READY" ? "ERROR" : availability}
         message={error?.message}
+        onRetry={refresh}
       />
     );
   }

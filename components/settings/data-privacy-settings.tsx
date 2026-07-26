@@ -16,9 +16,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Select, Switch } from "@/components/ui/form-controls";
 import { attendSafeRepository, type AttendSafeSnapshot } from "@/db";
+import type { BackupImportProgress, PreparedBackupImport } from "@/lib/backup";
 import type { ThemePreference } from "@/types/domain";
 
 import { applyThemePreference, safeExportFilename } from "./settings-model";
+import { BackupImportDialog } from "./backup-import-dialog";
 import {
   SettingsConfirmDialog,
   type DestructiveConfirmation,
@@ -73,22 +75,6 @@ function downloadText(text: string, filename: string, type: string): void {
   anchor.click();
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
-async function readFileText(file: File): Promise<string> {
-  if (typeof file.text === "function") return file.text();
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () =>
-      typeof reader.result === "string"
-        ? resolve(reader.result)
-        : reject(new Error("The backup file could not be read.")),
-    );
-    reader.addEventListener("error", () =>
-      reject(reader.error ?? new Error("The backup file could not be read.")),
-    );
-    reader.readAsText(file);
-  });
 }
 
 export function PreferenceSettings({ data }: { data: AttendSafeSnapshot }) {
@@ -183,6 +169,9 @@ export function DataPrivacySettings({ data }: { data: AttendSafeSnapshot }) {
   );
   const [confirmation, setConfirmation] = useState<DestructiveConfirmation>();
   const [destructiveBusy, setDestructiveBusy] = useState(false);
+  const [preparedImport, setPreparedImport] = useState<PreparedBackupImport>();
+  const [importProgress, setImportProgress] = useState<BackupImportProgress>();
+  const importAbortRef = useRef<AbortController | undefined>(undefined);
 
   const exportJson = async (profileOnly: boolean) => {
     setBusy(profileOnly ? "PROFILE_EXPORT" : "APP_EXPORT");
@@ -195,7 +184,7 @@ export function DataPrivacySettings({ data }: { data: AttendSafeSnapshot }) {
         : "all-profiles";
       downloadText(
         json,
-        `attendsafe-${label}-${new Date().toISOString().slice(0, 10)}.json`,
+        `attendance-tracker-backup-${label}-${new Date().toISOString().slice(0, 10)}.json`,
         "application/json",
       );
       toast.success("JSON backup downloaded");
@@ -211,20 +200,50 @@ export function DataPrivacySettings({ data }: { data: AttendSafeSnapshot }) {
   };
 
   const importJson = async (file: File) => {
-    setBusy("IMPORT");
+    if (busy) return;
+    const controller = new AbortController();
+    importAbortRef.current = controller;
+    setBusy("PREPARE_IMPORT");
     try {
-      const json = await readFileText(file);
-      await attendSafeRepository.importBackup(json, { mode: "MERGE" });
-      toast.success("Backup validated and imported");
+      const prepared = await attendSafeRepository.prepareBackupFile(file, {
+        signal: controller.signal,
+        onProgress: setImportProgress,
+      });
+      setPreparedImport(prepared);
+      setBusy(undefined);
     } catch (cause) {
       toast.error(
         cause instanceof Error
           ? cause.message
-          : "Backup could not be imported.",
+          : "Backup could not be prepared.",
+      );
+      setBusy(undefined);
+    } finally {
+      importAbortRef.current = undefined;
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  const applyPreparedImport = async () => {
+    if (!preparedImport || busy) return;
+    setBusy("APPLY_IMPORT");
+    setImportProgress({ stage: "IMPORTING", progress: 1 });
+    try {
+      await attendSafeRepository.importPreparedBackup(preparedImport);
+      const imported = preparedImport.preview;
+      setPreparedImport(undefined);
+      toast.success(
+        `Imported ${imported.subjects} subjects and ${imported.attendanceRecords} attendance records`,
+      );
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error
+          ? cause.message
+          : "Import failed; existing data was preserved.",
       );
     } finally {
       setBusy(undefined);
-      if (inputRef.current) inputRef.current.value = "";
+      setImportProgress(undefined);
     }
   };
 
@@ -320,7 +339,8 @@ export function DataPrivacySettings({ data }: { data: AttendSafeSnapshot }) {
               <div>
                 <h3 className="font-bold">JSON backup</h3>
                 <p className="text-muted-foreground text-xs">
-                  Schema-versioned and validated before import.
+                  Created and validated locally. Backups can contain sensitive
+                  attendance data, so store them securely.
                 </p>
               </div>
             </div>
@@ -350,7 +370,11 @@ export function DataPrivacySettings({ data }: { data: AttendSafeSnapshot }) {
                 onClick={() => inputRef.current?.click()}
               >
                 <Upload className="size-4" aria-hidden="true" />
-                {busy === "IMPORT" ? "Importing…" : "Import backup"}
+                {busy === "PREPARE_IMPORT"
+                  ? "Validating…"
+                  : busy === "APPLY_IMPORT"
+                    ? "Applying…"
+                    : "Import backup"}
               </Button>
               <input
                 ref={inputRef}
@@ -363,6 +387,23 @@ export function DataPrivacySettings({ data }: { data: AttendSafeSnapshot }) {
                   if (file) void importJson(file);
                 }}
               />
+              {busy === "PREPARE_IMPORT" && importProgress ? (
+                <div
+                  className="bg-secondary mt-3 w-full rounded-xl p-3 text-xs"
+                  role="status"
+                  aria-live="polite"
+                >
+                  {importProgress.stage.replaceAll("_", " ").toLowerCase()}…
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="ml-2"
+                    onClick={() => importAbortRef.current?.abort()}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -443,6 +484,14 @@ export function DataPrivacySettings({ data }: { data: AttendSafeSnapshot }) {
         busy={destructiveBusy}
         onClose={() => setConfirmation(undefined)}
         onConfirm={runDestructiveAction}
+      />
+      <BackupImportDialog
+        prepared={preparedImport}
+        current={data}
+        applying={busy === "APPLY_IMPORT"}
+        onExportCurrent={() => void exportJson(false)}
+        onConfirm={() => void applyPreparedImport()}
+        onCancel={() => setPreparedImport(undefined)}
       />
     </>
   );

@@ -111,7 +111,9 @@ async function seedBackupDatabase(database: AttendSafeDatabase): Promise<{
     createdAt: now,
     updatedAt: now,
   };
-  const bytes = new TextEncoder().encode("image bytes");
+  const bytes = new Uint8Array([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0,
+  ]);
   const upload: UploadedTimetableReference = {
     id: crypto.randomUUID(),
     profileId: profile.id,
@@ -171,7 +173,9 @@ describe("AttendSafe backup", () => {
       seeded.upload.id,
     );
     expect(importedUpload?.rotation).toBe(90);
-    expect(await importedUpload?.blob.text()).toBe("image bytes");
+    expect(
+      new Uint8Array((await importedUpload?.blob.arrayBuffer()) ?? []),
+    ).toEqual(new Uint8Array(await seeded.upload.blob.arrayBuffer()));
   });
 
   it("rejects malformed JSON and broken foreign-key references before writing", async () => {
@@ -181,7 +185,7 @@ describe("AttendSafe backup", () => {
     backup.data.classSessions[0]!.subjectId = crypto.randomUUID();
     const target = createDatabase();
 
-    expect(() => parseBackupJson("not json")).toThrow("not valid JSON");
+    expect(() => parseBackupJson("not json")).toThrow(/not .*JSON/i);
     await expect(importBackup(target, backup)).rejects.toThrow();
     expect(await target.profiles.count()).toBe(0);
   });
@@ -201,7 +205,8 @@ describe("AttendSafe backup", () => {
       data: legacyData,
     });
 
-    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.version).toBe(3);
+    expect(migrated.format).toBe("attendance-tracker-backup");
     expect(migrated.data.uploadedTimetableReferences).toEqual([]);
   });
 

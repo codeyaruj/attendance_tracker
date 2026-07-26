@@ -81,7 +81,7 @@ const confirmations: Record<TodayBulkAction, ConfirmAction> = {
 };
 
 export function TodayScreen() {
-  const { data, loading, availability, error } = useAttendSafeData();
+  const { data, loading, availability, error, refresh } = useAttendSafeData();
   const timeZone = data?.activeProfile?.timezone;
   const today = isoDateInTimeZone(new Date(), timeZone);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
@@ -138,6 +138,7 @@ export function TodayScreen() {
       <AttendanceUnavailableState
         kind={availability === "READY" ? "ERROR" : availability}
         message={error?.message}
+        onRetry={refresh}
       />
     );
   }

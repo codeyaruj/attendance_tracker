@@ -9,20 +9,11 @@ import {
   type AttendSafeBackup,
 } from "@/types/domain";
 import type { NormalizedTimetableDraft } from "@/types/draft";
-
-const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
-
-function isCalendarDate(value: string): boolean {
-  if (!ISO_DATE_PATTERN.test(value)) return false;
-  const [year, month, day] = value.split("-").map(Number);
-  const parsed = new Date(Date.UTC(year, month - 1, day));
-  return (
-    parsed.getUTCFullYear() === year &&
-    parsed.getUTCMonth() === month - 1 &&
-    parsed.getUTCDate() === day
-  );
-}
+import {
+  isStrictIsoDate,
+  isStrictLocalTime,
+  isStrictTimestamp,
+} from "./date-validation";
 
 function isTimeZone(value: string): boolean {
   try {
@@ -37,13 +28,16 @@ export const idSchema = z.string().uuid();
 export const isoDateSchema = z
   .string()
   .refine(
-    isCalendarDate,
+    isStrictIsoDate,
     "Expected a valid calendar date in YYYY-MM-DD format",
   );
-export const isoDateTimeSchema = z.string().datetime({ offset: true });
+export const isoDateTimeSchema = z
+  .string()
+  .datetime({ offset: true })
+  .refine(isStrictTimestamp, "Expected a real ISO timestamp with an offset");
 export const timeSchema = z
   .string()
-  .regex(TIME_PATTERN, "Expected a 24-hour time in HH:mm format");
+  .refine(isStrictLocalTime, "Expected a 24-hour time in HH:mm format");
 export const confidenceSchema = z.number().finite().min(0).max(1);
 export const basisPointsSchema = z.number().int().min(0).max(10_000);
 export const dayOfWeekSchema = z.enum(DAYS_OF_WEEK);
@@ -53,11 +47,17 @@ export const sessionStatusSchema = z.enum(SESSION_STATUSES);
 export const attendanceStatusSchema = z.enum(ATTENDANCE_STATUSES);
 export const timeZoneSchema = z
   .string()
-  .trim()
   .min(1)
+  .refine((value) => value === value.trim(), "Unexpected surrounding spaces")
   .refine(isTimeZone, "Expected a valid IANA time zone");
 
-const optionalTextSchema = z.string().trim().min(1).max(500).optional();
+const trimmedTextSchema = (maximumLength: number) =>
+  z
+    .string()
+    .min(1)
+    .max(maximumLength)
+    .refine((value) => value === value.trim(), "Unexpected surrounding spaces");
+const optionalTextSchema = trimmedTextSchema(500).optional();
 const optionalModelTextSchema = (maximumLength: number) =>
   z.preprocess(
     (value) =>
@@ -74,7 +74,7 @@ const timestampShape = {
 export const profileSchema = z
   .object({
     id: idSchema,
-    displayName: z.string().trim().min(1).max(100),
+    displayName: trimmedTextSchema(100),
     institution: optionalTextSchema,
     course: optionalTextSchema,
     section: optionalTextSchema,
@@ -89,7 +89,7 @@ export const semesterSchema = z
   .object({
     id: idSchema,
     profileId: idSchema,
-    name: z.string().trim().min(1).max(150),
+    name: trimmedTextSchema(150),
     startDate: isoDateSchema,
     endDate: isoDateSchema,
     minimumAttendanceBasisPoints: basisPointsSchema,
@@ -129,7 +129,7 @@ export const timetableSchema = z
   .object({
     id: idSchema,
     semesterId: idSchema,
-    title: z.string().trim().min(1).max(200),
+    title: trimmedTextSchema(200),
     timezone: timeZoneSchema,
     ...timestampShape,
   })
@@ -141,7 +141,7 @@ export const timetableVersionSchema = z
     timetableId: idSchema,
     semesterId: idSchema,
     version: z.number().int().positive(),
-    label: z.string().trim().min(1).max(150),
+    label: trimmedTextSchema(150),
     effectiveStartDate: isoDateSchema,
     effectiveEndDate: isoDateSchema.optional(),
     isConfirmed: z.boolean(),
@@ -168,8 +168,8 @@ export const subjectSchema = z
     id: idSchema,
     semesterId: idSchema,
     code: optionalTextSchema,
-    name: z.string().trim().min(1).max(200),
-    shortName: z.string().trim().min(1).max(40),
+    name: trimmedTextSchema(200),
+    shortName: trimmedTextSchema(40),
     credits: z.number().finite().min(0).max(100),
     classType: classTypeSchema,
     minimumAttendanceBasisPointsOverride: basisPointsSchema.optional(),
@@ -209,7 +209,7 @@ export const subjectSchema = z
 export const electiveOptionSchema = z
   .object({
     subjectId: idSchema,
-    label: z.string().trim().min(1).max(200),
+    label: trimmedTextSchema(200),
   })
   .strict();
 
@@ -217,10 +217,10 @@ export const electiveGroupSchema = z
   .object({
     id: idSchema,
     semesterId: idSchema,
-    name: z.string().trim().min(1).max(150),
+    name: trimmedTextSchema(150),
     options: z.array(electiveOptionSchema).min(1),
     selectedSubjectIds: z.array(idSchema),
-    allowMultiple: z.boolean().optional().default(false),
+    allowMultiple: z.boolean(),
     ...timestampShape,
   })
   .strict()
@@ -252,9 +252,9 @@ export const timetableSlotSchema = z
     dayOfWeek: dayOfWeekSchema,
     startTime: timeSchema,
     endTime: timeSchema,
-    faculty: z.array(z.string().trim().min(1).max(100)),
+    faculty: z.array(trimmedTextSchema(100)),
     room: optionalTextSchema,
-    batchRestriction: z.array(z.string().trim().min(1).max(100)),
+    batchRestriction: z.array(trimmedTextSchema(100)),
     electiveGroupId: idSchema.optional(),
     weekPattern: weekPatternSchema,
     customWeekPattern: optionalTextSchema,
@@ -310,7 +310,7 @@ export const academicExceptionSchema = z
     endTime: timeSchema.optional(),
     subjectId: idSchema.optional(),
     replacementDate: isoDateSchema.optional(),
-    faculty: z.array(z.string().trim().min(1).max(100)).optional(),
+    faculty: z.array(trimmedTextSchema(100)).optional(),
     room: optionalTextSchema,
     notes: optionalTextSchema,
     ...timestampShape,
@@ -337,11 +337,23 @@ export const academicExceptionSchema = z
     }
     if (
       exception.type === "RESCHEDULED_SESSION" &&
-      exception.replacementDate === undefined
+      !exception.timetableSlotId &&
+      !exception.classSessionId
     ) {
       context.addIssue({
         code: "custom",
-        message: "A rescheduled session requires a replacement date",
+        message: "A rescheduled session requires its original occurrence",
+        path: ["classSessionId"],
+      });
+    }
+    if (
+      exception.type === "RESCHEDULED_SESSION" &&
+      (!exception.replacementDate || !exception.startTime || !exception.endTime)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "A rescheduled session requires a replacement date, start time, and end time",
         path: ["replacementDate"],
       });
     }
@@ -353,6 +365,18 @@ export const academicExceptionSchema = z
         code: "custom",
         message: "An extra session requires subject, start time, and end time",
         path: ["type"],
+      });
+    }
+    if (
+      (exception.type === "CANCELLED_SESSION" ||
+        exception.type === "SESSION_OVERRIDE") &&
+      !exception.timetableSlotId &&
+      !exception.classSessionId
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "A session-specific exception requires an original occurrence",
+        path: ["classSessionId"],
       });
     }
   });
@@ -369,7 +393,7 @@ export const classSessionSchema = z
     endTime: timeSchema,
     status: sessionStatusSchema,
     source: z.enum(["TIMETABLE", "EXTRA", "RESCHEDULED"]),
-    faculty: z.array(z.string().trim().min(1).max(100)),
+    faculty: z.array(trimmedTextSchema(100)),
     room: optionalTextSchema,
     notes: optionalTextSchema,
     ...timestampShape,
@@ -413,7 +437,7 @@ export const appSettingsSchema = z
         OTHER: z.boolean(),
       })
       .strict(),
-    includeZeroCredit: z.boolean().optional().default(false),
+    includeZeroCredit: z.boolean(),
     offlineReady: z.boolean(),
     notificationsPrepared: z.boolean(),
     updatedAt: isoDateTimeSchema,
@@ -425,8 +449,8 @@ export const recentActionSchema = z
     id: idSchema,
     profileId: idSchema,
     semesterId: idSchema.optional(),
-    kind: z.string().trim().min(1).max(100),
-    description: z.string().trim().min(1).max(500),
+    kind: trimmedTextSchema(100),
+    description: trimmedTextSchema(500),
     undoPayload: z.record(z.string(), z.unknown()).optional(),
     undoneAt: isoDateTimeSchema.optional(),
     ...timestampShape,

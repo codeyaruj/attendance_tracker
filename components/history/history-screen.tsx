@@ -64,7 +64,7 @@ function matchesSearch(entry: HistoryEntry, query: string): boolean {
 }
 
 export function HistoryScreen() {
-  const { data, loading, availability, error } = useAttendSafeData();
+  const { data, loading, availability, error, refresh } = useAttendSafeData();
   const today = isoDateInTimeZone(new Date(), data?.activeProfile?.timezone);
   const [filters, setFilters] = useState<HistoryFilterValues>(initialFilters);
   const [month, setMonth] = useState(() => parseISO(today));
@@ -121,6 +121,7 @@ export function HistoryScreen() {
       <AttendanceUnavailableState
         kind={availability === "READY" ? "ERROR" : availability}
         message={error?.message}
+        onRetry={refresh}
       />
     );
   }

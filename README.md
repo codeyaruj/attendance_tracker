@@ -98,11 +98,20 @@ For a threshold `T` stored in basis points, the engine compares `attended × 10,
 
 Settings provides:
 
-- full or profile-scoped JSON export;
-- schema-validated merge import in the UI, with transactional replacement support in the repository layer;
+- full or profile-scoped, version 3 JSON export;
+- strict import of current version 3 backups and explicit migration of legacy versions 1 and 2;
+- a bounded 5 MB local import pipeline with record, nesting, string, array, and embedded-file limits;
+- a preview showing record counts and migration warnings before any write;
+- replace-only import after typing `REPLACE`, applied across every table in one rollback-safe Dexie transaction;
 - upload Blob serialization in the backup format;
 - per-subject CSV export;
 - attendance-only reset, semester reset, profile deletion, and full app reset with typed confirmations.
+
+Backups are created and imported entirely in the browser and are never uploaded. They may contain sensitive attendance information and confirmed original timetable images/PDFs, so store them securely. Embedded sources are limited to 2 MB each and 5 MB decoded in total; the complete JSON backup must fit within 5 MB.
+
+Import replaces all existing AttendSafe data on the current origin; merge is intentionally unsupported because ambiguous record conflicts could corrupt attendance history. Export current data before replacement. Validation and migration finish before confirmation, and a failed database write rolls the entire transaction back without leaving partial imported data.
+
+If IndexedDB cannot open, the recovery screen can retry safely, export readable tables as a clearly labelled raw recovery file, or reset the database after typing `RESET`. Reset permanently deletes local data and is never automatic. See [the backup architecture guide](docs/backup-format.md) for schema and migration maintenance.
 
 Backups are the portability mechanism. Clearing browser storage, using private browsing, removing the site’s data, or losing the device can remove IndexedDB data, so export a JSON backup periodically.
 
@@ -145,6 +154,7 @@ The repository includes `.openai/hosting.json`, vinext, and a Cloudflare Worker 
 - IndexedDB is isolated to the browser origin, not encrypted independently by the app.
 - Do not treat browser storage as a substitute for a backup.
 - Timetable OCR and PDF rendering use self-hosted browser assets and have no server extraction path.
+- Backup parsing, migration, validation, preview, and import are local-only; backups are never sent to a server.
 - Destructive data operations require explicit confirmation and repository-level confirmation flags.
 
 ## Known limitations

@@ -366,7 +366,7 @@ function SlotPill({
 }
 
 export function TimetableScreen() {
-  const { data, loading, availability, error } = useAttendSafeData();
+  const { data, loading, availability, error, refresh } = useAttendSafeData();
   const [selectedDay, setSelectedDay] = useState<DayOfWeek>("MONDAY");
   const [selectedSlotId, setSelectedSlotId] = useState<string>();
   const [versionEditorOpen, setVersionEditorOpen] = useState(false);
@@ -433,6 +433,7 @@ export function TimetableScreen() {
             : "ERROR"
         }
         message={error?.message}
+        onRetry={refresh}
       />
     );
   }

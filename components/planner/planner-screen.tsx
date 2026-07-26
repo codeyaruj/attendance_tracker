@@ -277,6 +277,7 @@ export function PlannerScreen() {
       <AttendanceUnavailableState
         kind={availability === "READY" ? "ERROR" : availability}
         message={error?.message}
+        onRetry={refresh}
       />
     );
   }
