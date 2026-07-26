@@ -1,0 +1,9 @@
+.next
+.vinext
+dist
+node_modules
+pnpm-lock.yaml
+playwright-report
+test-results
+public/sw.js
+public/ocr-assets
