@@ -80,6 +80,10 @@ describe("SettingsScreen", () => {
     );
 
     expect(screen.getByTestId("settings-page")).toBeInTheDocument();
+    expect(screen.queryByText("Local-first control center")).toBeNull();
+    expect(
+      screen.queryByText("Your rules, your timetable, your device"),
+    ).toBeNull();
     expect(
       screen.getByRole("heading", { name: "Profiles and semester" }),
     ).toBeInTheDocument();
@@ -97,6 +101,11 @@ describe("SettingsScreen", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Install application" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Your timetable and attendance records are stored locally/,
+      ),
     ).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Display name" })).toHaveValue(
       "Asha",

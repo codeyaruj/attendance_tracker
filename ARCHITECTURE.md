@@ -12,6 +12,8 @@ Database failures produce a recovery state. Retry and readable-data export are n
 
 ## Data and processing flow
 
+Post-onboarding surfaces should prioritise user data, actions, warnings, and contextual empty states. Persistent feature advertising belongs in onboarding, settings, or feature-specific flows.
+
 ```text
 Static Cloudflare Pages origin
         ↓ app files only

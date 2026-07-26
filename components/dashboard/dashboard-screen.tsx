@@ -17,15 +17,12 @@ import {
   type SubjectAttendanceView,
 } from "@/components/attendance/attendance-view-model";
 import { DashboardSummary } from "@/components/dashboard/dashboard-summary";
-import { DemoExitButton } from "@/components/demo/demo-exit";
 import { SubjectAttendanceCard } from "@/components/dashboard/subject-attendance-card";
-import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Select } from "@/components/ui/form-controls";
 import type { AttendSafeSnapshot } from "@/db";
 import { useAttendSafeData } from "@/hooks/use-attendsafe-data";
 import { planFullDaySkip } from "@/lib/attendance";
-import { DEMO_IDS } from "@/lib/demo";
 
 type DashboardSort =
   "LOWEST" | "HIGHEST" | "SKIPPABLE" | "RECOVERY" | "ALPHABETICAL";
@@ -192,29 +189,21 @@ export function DashboardScreen() {
 
   return (
     <div className="grid gap-5" data-testid="dashboard-page">
-      {data.activeProfile?.id === DEMO_IDS.profile ? (
-        <Card className="border-warning/40 bg-warning-soft/50 flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="font-bold">Ready to use your own timetable?</p>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Leave the demo without deleting its sample data.
-            </p>
-          </div>
-          <DemoExitButton className="self-start sm:self-auto" />
-        </Card>
-      ) : null}
-      <Card className="overflow-hidden bg-[linear-gradient(135deg,var(--surface),var(--primary-soft))] p-5 sm:p-6">
+      <section aria-labelledby="attendance-overview-title">
         <p className="text-primary text-xs font-bold tracking-[0.16em] uppercase">
           {data.activeSemester.name}
         </p>
-        <h2 className="font-display mt-2 max-w-3xl text-2xl font-black tracking-tight sm:text-3xl">
-          Every subject has its own margin. Here’s yours.
+        <h2
+          id="attendance-overview-title"
+          className="font-display mt-1 text-2xl font-black tracking-tight sm:text-3xl"
+        >
+          Attendance overview
         </h2>
-        <p className="text-muted-foreground mt-2 max-w-2xl text-sm leading-6">
+        <p className="text-muted-foreground mt-1 max-w-2xl text-sm leading-6">
           Counts include only conducted sessions and your configured
           cancellation and exemption policies.
         </p>
-      </Card>
+      </section>
 
       <DashboardSummary
         values={{

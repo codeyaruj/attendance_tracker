@@ -13,7 +13,6 @@ import {
   AttendanceLoadingState,
   AttendanceUnavailableState,
 } from "@/components/attendance/data-state";
-import { Card } from "@/components/ui/card";
 import { useAttendSafeData } from "@/hooks/use-attendsafe-data";
 
 import { AttendancePolicySettings } from "./attendance-policy-settings";
@@ -54,34 +53,6 @@ export function SettingsScreen() {
 
   return (
     <div className="grid gap-5" data-testid="settings-page">
-      <Card className="bg-primary text-primary-foreground overflow-hidden">
-        <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-          <div>
-            <p className="text-primary-foreground/85 text-xs font-bold tracking-[0.16em] uppercase">
-              Local-first control center
-            </p>
-            <h2 className="font-display mt-2 text-2xl font-black tracking-tight sm:text-3xl">
-              Your rules, your timetable, your device
-            </h2>
-            <p className="text-primary-foreground/80 mt-2 max-w-2xl text-sm leading-6">
-              Edit attendance guardrails, resolve schedule choices, and keep a
-              portable backup. AttendSafe does not require an account or upload
-              attendance data.
-            </p>
-          </div>
-          <div className="flex items-center gap-3 rounded-2xl bg-white/10 p-4">
-            <HardDrive className="size-6" aria-hidden="true" />
-            <div>
-              <p className="text-sm font-bold">Stored locally</p>
-              <p className="text-primary-foreground text-xs">
-                {data.profiles.length} local{" "}
-                {data.profiles.length === 1 ? "profile" : "profiles"}
-              </p>
-            </div>
-          </div>
-        </div>
-      </Card>
-
       <nav
         aria-label="Settings sections"
         className="scrollbar-none -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0"

@@ -461,8 +461,7 @@ export function TodayScreen() {
                 : `${sessions.length} ${sessions.length === 1 ? "class" : "classes"} on your schedule`}
             </h2>
             <p className="text-primary-foreground/80 mt-2 max-w-2xl text-sm leading-6">
-              Attendance changes stay on this device and immediately update
-              every subject projection.
+              Mark each class below to update your subject projections.
             </p>
           </div>
         </Card>

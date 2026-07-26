@@ -339,16 +339,14 @@ export function PlannerScreen() {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div className="max-w-2xl">
             <div className="text-primary flex items-center gap-2 text-xs font-bold tracking-[0.15em] uppercase">
-              <Sparkles className="size-4" aria-hidden="true" /> Combined
-              planning
+              <Sparkles className="size-4" aria-hidden="true" /> Skip planner
             </div>
             <h2 className="font-display mt-2 text-2xl font-black tracking-tight sm:text-3xl">
-              Know the consequence before you miss the class.
+              Plan upcoming absences
             </h2>
             <p className="text-muted-foreground mt-2 text-sm leading-6 sm:text-base">
-              Every result uses your actual timetable version, exceptions,
-              batch, electives, and subject-specific thresholds. Simulations
-              stay private on this device.
+              Results use your current schedule, attendance, and
+              subject-specific thresholds.
             </p>
           </div>
           <dl className="grid grid-cols-3 gap-2 text-center">

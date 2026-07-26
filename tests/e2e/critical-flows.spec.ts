@@ -433,7 +433,7 @@ test("the skip planner simulates and saves a full-day absence only after confirm
   await page.goto("/skip-planner");
   await expect(
     page.getByRole("heading", {
-      name: "Know the consequence before you miss the class.",
+      name: "Plan upcoming absences",
     }),
   ).toBeVisible();
   await page.getByRole("tab", { name: /^(Whole day|Day)$/ }).click();
