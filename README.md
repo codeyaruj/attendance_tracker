@@ -98,10 +98,10 @@ Create an ignored `.dev.vars` file in the repository root for local Pages develo
 
 ```text
 GEMINI_API_KEY=PASTE_THE_REAL_KEY_HERE
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.5-flash
 ```
 
-`GEMINI_MODEL` is optional; the server defaults to `gemini-2.5-flash`. Run the static app and Pages Function together with:
+`GEMINI_MODEL` is optional; the server defaults to `gemini-3.5-flash`. Run the static app and Pages Function together with:
 
 ```bash
 pnpm dev:pages

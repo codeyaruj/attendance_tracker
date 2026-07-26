@@ -4,7 +4,7 @@ export const AI_TIMETABLE_LIMITS = {
   maximumImageBytes: 8 * 1024 * 1024,
   maximumHintsBytes: 32 * 1024,
   maximumRawTextCharacters: 12_000,
-  timeoutMs: 45_000,
+  timeoutMs: 600_000,
 } as const;
 
 export const AI_TIMETABLE_IMAGE_TYPES = [
@@ -32,6 +32,51 @@ export type AiErrorCode = z.infer<typeof aiErrorCodeSchema>;
 const nullableText = (maximum: number) =>
   z.string().trim().min(1).max(maximum).nullable();
 const textList = z.array(z.string().trim().min(1).max(100)).max(20);
+
+export const aiTimetableSessionSchema = z
+  .object({
+    day: z.enum([
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+      "Sunday",
+    ]),
+    startTime: z.string().max(20),
+    endTime: z.string().max(20),
+    subjectCode: nullableText(60),
+    subjectName: z.string().trim().min(1).max(200),
+    facultyCodes: textList,
+    facultyNames: textList,
+    room: nullableText(100),
+    type: z.enum([
+      "lecture",
+      "lab",
+      "tutorial",
+      "project",
+      "assessment",
+      "other",
+    ]),
+    batchTags: textList,
+    electiveTags: textList,
+    sectionTags: textList,
+    sourceText: nullableText(300),
+    confidence: z.number().finite().min(0).max(1),
+    notes: nullableText(300),
+  })
+  .strict();
+
+export const geminiTimetableResponseSchema = z
+  .object({
+    sessions: z.array(aiTimetableSessionSchema).max(500),
+    warnings: z.array(z.string().trim().min(1).max(500)).max(100),
+  })
+  .strict();
+export type GeminiTimetableResponse = z.infer<
+  typeof geminiTimetableResponseSchema
+>;
 
 export const localExtractionHintsSchema = z
   .object({
@@ -97,44 +142,7 @@ export const aiTimetableSchema = z
           .strict(),
       )
       .max(150),
-    sessions: z
-      .array(
-        z
-          .object({
-            day: z.enum([
-              "Monday",
-              "Tuesday",
-              "Wednesday",
-              "Thursday",
-              "Friday",
-              "Saturday",
-              "Sunday",
-            ]),
-            startTime: z.string().max(20),
-            endTime: z.string().max(20),
-            subjectCode: nullableText(60),
-            subjectName: z.string().trim().min(1).max(200),
-            facultyCodes: textList,
-            facultyNames: textList,
-            room: nullableText(100),
-            type: z.enum([
-              "lecture",
-              "lab",
-              "tutorial",
-              "project",
-              "assessment",
-              "other",
-            ]),
-            batchTags: textList,
-            electiveTags: textList,
-            sectionTags: textList,
-            sourceText: nullableText(300),
-            confidence: z.number().finite().min(0).max(1),
-            notes: nullableText(300),
-          })
-          .strict(),
-      )
-      .max(500),
+    sessions: z.array(aiTimetableSessionSchema).max(500),
     warnings: z.array(z.string().trim().min(1).max(500)).max(100),
   })
   .strict();

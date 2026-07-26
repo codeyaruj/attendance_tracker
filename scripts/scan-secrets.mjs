@@ -6,7 +6,8 @@ const patterns = [
   ["GitHub token", /(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{30,}/],
   ["GitHub fine-grained token", /github_pat_[A-Za-z0-9_]{50,}/],
   ["OpenAI-style key", /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}/],
-  ["Google API key", /\bAIza[0-9A-Za-z_-]{30,}/],
+  ["Google API key (AIza)", /\bAIza[0-9A-Za-z_-]{30,}/],
+  ["Google API key (AQ)", /\bAQ\.[0-9A-Za-z_-]{30,}/],
   [
     "credentialed database URL",
     /(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?):\/\/[^\s:@/]+:[^\s@/]+@/i,

@@ -2,7 +2,11 @@ import { z } from "zod";
 
 import type { NormalizedTimetableDraft } from "@/types";
 import type { ClassType, DayOfWeek } from "@/types/domain";
-import { aiTimetableSchema, type AiTimetable } from "./schema";
+import {
+  aiTimetableSchema,
+  geminiTimetableResponseSchema,
+  type AiTimetable,
+} from "./schema";
 
 const DAYS: Record<AiTimetable["sessions"][number]["day"], DayOfWeek> = {
   Monday: "MONDAY",
@@ -32,6 +36,58 @@ export class AiTimetableValidationError extends Error {
 
 function normaliseCode(value: string | null): string | undefined {
   return value?.trim().replace(/\s+/g, " ").toUpperCase() || undefined;
+}
+
+export function geminiResponseToAiTimetable(input: unknown): AiTimetable {
+  const result = geminiTimetableResponseSchema.safeParse(input);
+  if (!result.success) {
+    throw new AiTimetableValidationError("AI_INVALID_RESPONSE");
+  }
+  const subjects = [
+    ...new Map(
+      result.data.sessions.map((session) => {
+        const code = normaliseCode(session.subjectCode) ?? null;
+        const key = code ?? session.subjectName.toLowerCase();
+        return [
+          key,
+          {
+            code,
+            name: session.subjectName,
+            facultyCodes: session.facultyCodes,
+            facultyNames: session.facultyNames,
+            room: session.room,
+          },
+        ];
+      }),
+    ).values(),
+  ];
+  const timeSlots = [
+    ...new Map(
+      result.data.sessions.map((session) => [
+        `${session.startTime}-${session.endTime}`,
+        {
+          startTime: session.startTime,
+          endTime: session.endTime,
+          sourceText: session.sourceText,
+        },
+      ]),
+    ).values(),
+  ];
+  return validateAndNormaliseAiTimetable({
+    document: {
+      institution: null,
+      department: null,
+      programme: null,
+      semester: null,
+      section: null,
+      room: null,
+      academicYear: null,
+    },
+    subjects,
+    timeSlots,
+    sessions: result.data.sessions,
+    warnings: result.data.warnings,
+  });
 }
 
 export function validateAndNormaliseAiTimetable(input: unknown): AiTimetable {

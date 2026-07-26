@@ -1,26 +1,28 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createTimetableAnalysisHandler } from "@/functions/api/timetable/analyse";
+import { DEFAULT_GEMINI_MODEL } from "@/functions/api/timetable/gemini";
 import { validAiTimetable } from "./ai-timetable-validation.test";
 
-function context(request: Request, key = "test-key") {
-  return { request, env: { GEMINI_API_KEY: key } };
+function context(request: Request, key = "test-key", model?: string) {
+  return { request, env: { GEMINI_API_KEY: key, GEMINI_MODEL: model } };
 }
 
-function uploadRequest(options: { image?: File; hints?: string } = {}) {
+function uploadRequest(
+  options: { image?: File; hints?: string; url?: string } = {},
+) {
   const form = new FormData();
   if (options.image !== undefined) form.set("image", options.image);
   if (options.hints !== undefined) form.set("localHints", options.hints);
-  const request = new Request(
-    "https://attendance.example.pages.dev/api/timetable/analyse",
-    {
-      method: "POST",
-      headers: {
-        Origin: "https://attendance.example.pages.dev",
-        "Content-Type": "multipart/form-data; boundary=test",
-      },
+  const url =
+    options.url ?? "https://attendance.example.pages.dev/api/timetable/analyse";
+  const request = new Request(url, {
+    method: "POST",
+    headers: {
+      Origin: new URL(url).origin,
+      "Content-Type": "multipart/form-data; boundary=test",
     },
-  );
+  });
   return Object.assign(request, { formData: async () => form });
 }
 
@@ -128,6 +130,23 @@ describe("Cloudflare timetable analysis Function", () => {
     });
   });
 
+  it("uses the default model and honours the environment override", async () => {
+    const provider = vi.fn(async () => validAiTimetable());
+    await createTimetableAnalysisHandler(provider)(
+      context(uploadRequest({ image: image() })),
+    );
+    expect(provider).toHaveBeenLastCalledWith(
+      expect.objectContaining({ model: DEFAULT_GEMINI_MODEL }),
+    );
+
+    await createTimetableAnalysisHandler(provider)(
+      context(uploadRequest({ image: image() }), "test-key", "custom-model"),
+    );
+    expect(provider).toHaveBeenLastCalledWith(
+      expect.objectContaining({ model: "custom-model" }),
+    );
+  });
+
   it("maps rate limits and invalid/empty model output safely", async () => {
     const rateLimit = Object.assign(new Error("provider internals"), {
       status: 429,
@@ -170,6 +189,92 @@ describe("Cloudflare timetable analysis Function", () => {
     expect(await malformed.json()).toMatchObject({
       error: { code: "AI_INVALID_RESPONSE" },
     });
+  });
+
+  it.each([
+    [
+      400,
+      { response: { status: 400 }, error: { code: "INVALID_ARGUMENT" } },
+      "AI_INVALID_RESPONSE",
+      422,
+    ],
+    [403, { error: { status: 403 } }, "AI_PROVIDER_ERROR", 502],
+    [404, { status: 404 }, "AI_PROVIDER_ERROR", 502],
+    [429, { status: 429 }, "AI_RATE_LIMITED", 429],
+    [500, { error: { code: 500 } }, "AI_PROVIDER_ERROR", 502],
+    [502, { response: { status: 502 } }, "AI_PROVIDER_ERROR", 502],
+    [503, { code: 503 }, "AI_PROVIDER_ERROR", 502],
+    [504, { response: { status: 504 } }, "AI_TIMEOUT", 504],
+  ])(
+    "maps provider HTTP %i safely",
+    async (_providerStatus, shape, code, publicStatus) => {
+      const response = await createTimetableAnalysisHandler(
+        vi.fn(async () => {
+          throw Object.assign(new Error("private provider detail"), shape);
+        }),
+      )(context(uploadRequest({ image: image() })));
+      const copy = response.clone();
+      expect(response.status).toBe(publicStatus);
+      expect(await response.json()).toMatchObject({ error: { code } });
+      expect(await copy.text()).not.toContain("private provider detail");
+    },
+  );
+
+  it("logs bounded redacted diagnostics locally and nothing in production", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const key = "secret-api-key-for-test";
+    const hint = "private OCR hint";
+    const encodedImage = "A".repeat(120);
+    const provider = vi.fn(async () => {
+      throw Object.assign(
+        new Error(`${key} ${hint} private-table.jpg ${encodedImage}`),
+        { response: { status: 503 }, error: { code: "UNAVAILABLE" } },
+      );
+    });
+    const hints = JSON.stringify({ rawText: hint });
+    const localResponse = await createTimetableAnalysisHandler(provider)(
+      context(
+        uploadRequest({
+          image: image(),
+          hints,
+          url: "http://127.0.0.1:8788/api/timetable/analyse",
+        }),
+        key,
+        "diagnostic-model",
+      ),
+    );
+    const logged = JSON.stringify(log.mock.calls);
+    const diagnostic = log.mock.calls[0]?.[1] as {
+      model: string;
+      elapsedMs: number;
+      name: string;
+      status: number;
+      code: string;
+      message: string;
+    };
+    const body = await localResponse.text();
+    expect(log).toHaveBeenCalledOnce();
+    expect(diagnostic).toMatchObject({
+      model: "diagnostic-model",
+      name: "Error",
+      status: 503,
+      code: "UNAVAILABLE",
+    });
+    expect(diagnostic.elapsedMs).toBeGreaterThanOrEqual(0);
+    expect(logged).not.toContain(key);
+    expect(logged).not.toContain(hint);
+    expect(logged).not.toContain("private-table.jpg");
+    expect(logged).not.toContain(encodedImage);
+    expect(diagnostic.message.length).toBeLessThanOrEqual(500);
+    expect(body).not.toContain(key);
+    expect(body).not.toContain(hint);
+
+    log.mockClear();
+    await createTimetableAnalysisHandler(provider)(
+      context(uploadRequest({ image: image(), hints }), key),
+    );
+    expect(log).not.toHaveBeenCalled();
+    log.mockRestore();
   });
 });
 
