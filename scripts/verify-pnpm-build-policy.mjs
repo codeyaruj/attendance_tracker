@@ -25,7 +25,7 @@ if (allowBuildsIndex < 0) {
   for (const line of lines.slice(allowBuildsIndex + 1)) {
     if (!line.trim() || line.trimStart().startsWith("#")) continue;
     if (!line.startsWith("  ")) break;
-    const match = line.match(/^  ([a-zA-Z0-9@/_.-]+): (true|false)$/);
+    const match = line.match(/^  ["']?([a-zA-Z0-9@/_.-]+)["']?: (true|false)$/);
     if (!match) {
       errors.push(`invalid allowBuilds entry: ${line.trim()}`);
       continue;
@@ -35,6 +35,8 @@ if (allowBuildsIndex < 0) {
 }
 
 const expected = new Map([
+  ["@google/genai", false],
+  ["protobufjs", false],
   ["sharp", true],
   ["tesseract.js", false],
   ["unrs-resolver", true],
@@ -43,7 +45,11 @@ for (const [name, allowed] of expected) {
   if (classifications.get(name) !== allowed) {
     errors.push(`${name} must be explicitly classified as ${allowed}`);
   }
-  if (!lockfile.includes(`\n  ${name}@`)) {
+  if (
+    !lockfile.includes(`\n  ${name}@`) &&
+    !lockfile.includes(`\n  '${name}@`) &&
+    !lockfile.includes(`\n  "${name}@`)
+  ) {
     errors.push(`${name} is classified but is not present in pnpm-lock.yaml`);
   }
 }
@@ -59,5 +65,5 @@ if (errors.length) {
 }
 
 process.stdout.write(
-  "pnpm build policy verified: required scripts allowed, tesseract.js intentionally blocked, and no legacy ignore list remains.\n",
+  "pnpm build policy verified: required scripts allowed, reviewed dependency scripts blocked, and no legacy ignore list remains.\n",
 );
