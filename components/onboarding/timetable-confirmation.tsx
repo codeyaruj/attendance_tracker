@@ -789,9 +789,10 @@ export function TimetableConfirmation({
         ) : null}
       </Card>
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="border-border bg-background/95 sticky bottom-0 -mx-4 flex flex-col-reverse gap-2 border-t px-4 pt-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] backdrop-blur sm:mx-0 sm:flex-row sm:items-center sm:justify-between sm:rounded-2xl sm:border sm:px-4">
         <Button
           variant="ghost"
+          className="w-full sm:w-auto"
           disabled={stepIndex === 0 || saving}
           onClick={() => setStepIndex((index) => Math.max(0, index - 1))}
         >
@@ -800,6 +801,7 @@ export function TimetableConfirmation({
         {step === "REVIEW" ? (
           <Button
             size="lg"
+            className="w-full sm:w-auto"
             disabled={
               saving || attendanceInvalid || value.timetableSlots.length === 0
             }
@@ -819,6 +821,7 @@ export function TimetableConfirmation({
           </Button>
         ) : (
           <Button
+            className="w-full sm:w-auto"
             disabled={
               (step === "UNCERTAIN" && uncertainInvalid) ||
               (step === "BATCH" && batchInvalid) ||

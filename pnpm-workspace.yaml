@@ -9,6 +9,8 @@ overrides:
   sharp: 0.35.3
 
 allowBuilds:
+  '@google/genai': set this to true or false
+  protobufjs: set this to true or false
   sharp: true
   tesseract.js: false
   unrs-resolver: true

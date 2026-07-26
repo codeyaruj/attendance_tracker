@@ -8,9 +8,6 @@ async function waitForControl(page: import("@playwright/test").Page) {
     return Boolean(navigator.serviceWorker.controller);
   });
   await page.waitForLoadState("domcontentloaded");
-  // The application intentionally reloads once when a newly installed worker
-  // first takes control. Wait for that lifecycle event to settle.
-  await page.waitForTimeout(750);
 }
 
 async function storeCount(
@@ -148,9 +145,26 @@ test("local records survive closing and reopening the application page", async (
 
   await page.close();
   const reopenedPage = await context.newPage();
+  // Playwright clocks are page-scoped. Keep the reopened page on the same
+  // deterministic Thursday used to create and mark the demo session.
+  await reopenedPage.clock.setFixedTime(new Date("2026-07-23T10:00:00+05:30"));
   await reopenedPage.goto("/today/");
   await expect(reopenedPage.getByTestId("today-page")).toBeVisible();
-  expect(await storeCount(reopenedPage, "attendanceRecords")).toBe(1);
+  await expect.poll(() => storeCount(reopenedPage, "profiles")).toBe(1);
+  await expect
+    .poll(() => storeCount(reopenedPage, "timetableSlots"))
+    .toBeGreaterThan(0);
+  await expect
+    .poll(() => storeCount(reopenedPage, "attendanceRecords"))
+    .toBe(1);
+  const restoredSession = reopenedPage
+    .getByTestId("today-session-list")
+    .locator('[data-testid^="today-session-"]')
+    .first();
+  await expect(restoredSession).toBeVisible();
+  await expect(
+    restoredSession.getByRole("button", { name: "Present", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
 });
 
 test("cache policy excludes API-like and personal content", async ({

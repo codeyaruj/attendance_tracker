@@ -120,6 +120,26 @@ async function advanceTimetableConfirmation(page: Page): Promise<void> {
   throw new Error("Timetable confirmation review was not reached.");
 }
 
+async function expectControlReceivesPointerEvents(
+  page: Page,
+  testId: string,
+): Promise<void> {
+  const control = page.getByTestId(testId);
+  await expect(control).toBeInViewport();
+  await expect
+    .poll(() =>
+      control.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(
+          rect.left + rect.width / 2,
+          rect.top + rect.height / 2,
+        );
+        return hit === element || Boolean(hit && element.contains(hit));
+      }),
+    )
+    .toBe(true);
+}
+
 test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(FIXED_NOW);
   await resetLocalData(page);
@@ -154,6 +174,7 @@ test("manual timetable creation supports attendance marking and dashboard review
   await page.getByTestId("review-manual-timetable").click();
 
   await advanceTimetableConfirmation(page);
+  await expectControlReceivesPointerEvents(page, "confirm-timetable");
   await page.getByTestId("confirm-timetable").click();
 
   await expect(page).toHaveURL(/\/today\/?$/);
@@ -204,6 +225,7 @@ test("timetable upload can skip local OCR and continue to manual review", async 
   await subjectForm.getByLabel("Ends").fill("12:00");
   await subjectForm.getByTestId("preview-subject").click();
   await page.getByTestId("confirm-add-subject").click();
+  await expectControlReceivesPointerEvents(page, "confirm-timetable");
   await page.getByTestId("confirm-timetable").click();
 
   await expect(page).toHaveURL(/\/today\/?$/);
