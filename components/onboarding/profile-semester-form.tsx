@@ -170,7 +170,7 @@ export function ProfileSemesterForm({
                 autoFocus
                 autoComplete="name"
                 {...register("displayName")}
-                placeholder="Aruj"
+                placeholder="Niyati"
               />
             </Field>
             <Field label="Institution (optional)">
