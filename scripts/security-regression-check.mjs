@@ -59,7 +59,10 @@ if (/indexedDB|deleteDatabase/i.test(worker))
   errors.push("service worker must not access or delete IndexedDB");
 
 const aiFunction = await readFile("functions/api/timetable/analyse.ts", "utf8");
-const geminiFunction = await readFile("functions/api/timetable/gemini.ts", "utf8");
+const geminiFunction = await readFile(
+  "functions/api/timetable/gemini.ts",
+  "utf8",
+);
 if (!aiFunction.includes("context.env.GEMINI_API_KEY"))
   errors.push("Gemini key is not read from the Pages Function environment");
 if (/NEXT_PUBLIC_GEMINI|console\.(?:log|debug|info)/.test(aiFunction))
@@ -68,9 +71,7 @@ if (
   /z\.toJSONSchema|responseJsonSchema:\s*aiTimetableSchema/.test(
     geminiFunction,
   ) ||
-  !geminiFunction.includes(
-    "responseJsonSchema: GEMINI_TIMETABLE_JSON_SCHEMA",
-  )
+  !geminiFunction.includes("responseJsonSchema: GEMINI_TIMETABLE_JSON_SCHEMA")
 )
   errors.push("Gemini must use the reviewed compact provider JSON schema");
 
