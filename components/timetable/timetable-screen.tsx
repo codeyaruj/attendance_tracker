@@ -10,7 +10,6 @@ import {
   List,
   MapPin,
   Pencil,
-  Plus,
   RotateCcw,
   Users,
 } from "lucide-react";
@@ -342,6 +341,7 @@ function SlotPill({
     <button
       type="button"
       onClick={onClick}
+      data-testid={`timetable-slot-${slot.id}`}
       className={cn(
         "border-primary/15 bg-primary-soft text-primary hover:border-primary/40 focus-visible:ring-primary w-full rounded-xl border p-3 text-left transition hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:outline-none",
         slot.isBreak && "border-border bg-secondary text-muted-foreground",
@@ -374,6 +374,7 @@ export function TimetableScreen() {
   const [versionLabel, setVersionLabel] = useState("");
   const [effectiveDate, setEffectiveDate] = useState("");
   const [savingVersion, setSavingVersion] = useState(false);
+  const [initialEditSlotId, setInitialEditSlotId] = useState<string>();
   const [presentation, setPresentation] = useState<"AGENDA" | "WEEK">("AGENDA");
 
   useEffect(() => {
@@ -519,8 +520,9 @@ export function TimetableScreen() {
     }
   };
 
-  const openVersionEditor = () => {
+  const openVersionEditor = (slotId?: string) => {
     setDraft(timetableDraft(data, version));
+    setInitialEditSlotId(slotId);
     setVersionLabel(
       `Updated ${new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date())}`,
     );
@@ -562,8 +564,8 @@ export function TimetableScreen() {
           >
             <History className="size-4" /> Version history
           </Link>
-          <Button onClick={openVersionEditor}>
-            <Plus className="size-4" /> New version
+          <Button onClick={() => openVersionEditor()}>
+            <Pencil className="size-4" /> Edit timetable
           </Button>
         </div>
       </section>
@@ -875,14 +877,21 @@ export function TimetableScreen() {
                   Simulate skip
                 </Link>
               ) : null}
+              <Link
+                href="/today"
+                onClick={() => setSelectedSlotId(undefined)}
+                className={buttonClassName({ variant: "outline" })}
+              >
+                <CalendarDays className="size-4" /> Add or cancel one date
+              </Link>
               <Button
                 variant="outline"
                 onClick={() => {
                   setSelectedSlotId(undefined);
-                  openVersionEditor();
+                  openVersionEditor(selectedSlot.id);
                 }}
               >
-                <Pencil className="size-4" /> Edit as new version
+                <Pencil className="size-4" /> Edit this class
               </Button>
             </div>
           </div>
@@ -892,8 +901,8 @@ export function TimetableScreen() {
       <Dialog
         open={versionEditorOpen}
         onClose={() => setVersionEditorOpen(false)}
-        title="Create a new timetable version"
-        description="Past attendance stays linked to the earlier version. The new schedule takes effect on the date you choose."
+        title="Edit timetable"
+        description="Tap any class to edit, move, duplicate, or delete it. Saving creates a dated version so attendance history stays intact."
       >
         {draft ? (
           <div className="grid gap-5">
@@ -914,7 +923,11 @@ export function TimetableScreen() {
                 />
               </Field>
             </div>
-            <DraftEditor value={draft} onChange={setDraft} />
+            <DraftEditor
+              value={draft}
+              onChange={setDraft}
+              initialEditSlotId={initialEditSlotId}
+            />
             <div className="border-info-strong/20 bg-info-soft text-info-strong rounded-xl border p-3 text-xs leading-5">
               Saving creates an immutable version boundary. Attendance already
               recorded against older sessions is preserved.
@@ -945,6 +958,7 @@ export function TimetableScreen() {
                       `Timetable version ${bundle.version.version} activated`,
                     );
                     setVersionEditorOpen(false);
+                    setInitialEditSlotId(undefined);
                   } catch (cause) {
                     toast.error(
                       cause instanceof Error

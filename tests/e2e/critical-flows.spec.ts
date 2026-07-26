@@ -195,17 +195,21 @@ test("timetable upload can skip local OCR and continue to manual review", async 
 
   await advanceTimetableConfirmation(page);
   await page.getByTestId("add-class").click();
-  const slotForm = page.getByTestId("slot-form");
-  await slotForm.getByLabel("Subject name").fill("Uploaded Schedule Class");
-  await slotForm.getByLabel("Subject code").fill("UPL501");
-  await slotForm.locator('select[name="dayOfWeek"]').selectOption("THURSDAY");
-  await slotForm.locator('input[name="startTime"]').fill("11:00");
-  await slotForm.locator('input[name="endTime"]').fill("12:00");
-  await slotForm.getByTestId("save-slot").click();
+  const subjectForm = page.getByTestId("add-subject-form");
+  await subjectForm.getByLabel("Subject name").fill("Uploaded Schedule Class");
+  await subjectForm.getByLabel("Subject code").fill("UPL501");
+  await subjectForm.getByLabel("Mon").uncheck();
+  await subjectForm.getByLabel("Thu").check();
+  await subjectForm.getByLabel("Starts").fill("11:00");
+  await subjectForm.getByLabel("Ends").fill("12:00");
+  await subjectForm.getByTestId("preview-subject").click();
+  await page.getByTestId("confirm-add-subject").click();
   await page.getByTestId("confirm-timetable").click();
 
   await expect(page).toHaveURL(/\/today\/?$/);
-  await expect(page.getByText("Uploaded Schedule Class")).toBeVisible();
+  await expect(
+    page.getByTestId("today-session-list").getByText("Uploaded Schedule Class"),
+  ).toBeVisible();
   await expect
     .poll(
       async () => (await readStore(page, "uploadedTimetableReferences")).length,
@@ -355,21 +359,48 @@ test("marking a college holiday creates a dated academic exception", async ({
   ).toBeVisible();
 });
 
+test("extra and cancelled classes are dated exceptions that preserve attendance", async ({
+  page,
+}) => {
+  await openTodayWithDemo(page);
+  await markFirstClassPresent(page);
+
+  await page.getByTestId("add-session-change").click();
+  let changeForm = page.getByTestId("session-change-form");
+  await changeForm.getByLabel("Starts").fill("18:00");
+  await changeForm.getByLabel("Ends").fill("19:00");
+  await changeForm.getByRole("button", { name: "Save change" }).click();
+  await expect(page.getByText("Extra class added")).toBeVisible();
+
+  await page.getByTestId("add-session-change").click();
+  changeForm = page.getByTestId("session-change-form");
+  await changeForm.getByLabel("Change type").selectOption("CANCELLATION");
+  await changeForm.getByRole("button", { name: "Cancel class" }).click();
+  await expect(page.getByText("Class cancelled")).toBeVisible();
+
+  const exceptions = await readStore(page, "academicExceptions");
+  expect(exceptions.some((item) => item.type === "EXTRA_SESSION")).toBe(true);
+  expect(exceptions.some((item) => item.type === "CANCELLED_SESSION")).toBe(
+    true,
+  );
+  expect(await readStore(page, "attendanceRecords")).toHaveLength(1);
+});
+
 test("a timetable edit is activated as a new version", async ({ page }) => {
   await loadDemo(page);
   await page.goto("/timetable");
   await expect(page.getByTestId("timetable-screen")).toBeVisible();
-  await page.getByRole("button", { name: "New version", exact: true }).click();
+  await page.getByRole("button", { name: "Agenda", exact: true }).click();
+  await page
+    .getByTestId(/^timetable-slot-/)
+    .first()
+    .click();
+  await page.getByRole("button", { name: "Edit this class" }).click();
 
   const versionDialog = page.getByRole("dialog", {
-    name: "Create a new timetable version",
+    name: "Edit timetable",
   });
   await versionDialog.getByLabel("Version label").fill("E2E room update");
-  await versionDialog.getByRole("button", { name: "Form list" }).click();
-  const firstEditButton = versionDialog
-    .getByRole("button", { name: "Edit", exact: true })
-    .first();
-  await firstEditButton.click();
 
   const slotForm = page.getByTestId("slot-form");
   await expect(slotForm).toBeVisible();

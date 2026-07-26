@@ -8,7 +8,6 @@ import {
   List,
   Merge,
   Plus,
-  Rows3,
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -19,6 +18,7 @@ import { Card } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/form-controls";
 import {
+  applyDraftSlotEdit,
   countExactDuplicateSlots,
   findDraftConflictSlotIds,
   mergeDuplicateSubjects,
@@ -26,6 +26,7 @@ import {
   summarizeDuplicateSubjects,
   synchronizeDraftAlternatives,
   tryParsePastedTimetableText,
+  type DraftSlotEditScope,
 } from "@/lib/timetable";
 import { cn } from "@/lib/utils";
 import {
@@ -36,6 +37,7 @@ import {
   type NormalizedTimetableDraft,
 } from "@/types";
 import { SlotFormDialog } from "./slot-form-dialog";
+import { AddSubjectDialog } from "./add-subject-dialog";
 import { WeeklyGridBuilder } from "./weekly-grid-builder";
 
 function mergeSubject(
@@ -55,19 +57,27 @@ export function DraftEditor({
   value,
   onChange,
   compact = false,
+  initialEditSlotId,
 }: {
   value: NormalizedTimetableDraft;
   onChange: (value: NormalizedTimetableDraft) => void;
   compact?: boolean;
+  initialEditSlotId?: string;
 }) {
   const [view, setView] = useState<"GRID" | "LIST">("LIST");
   const [pendingDelete, setPendingDelete] = useState<DraftSlot>();
-  const [editingSlot, setEditingSlot] = useState<DraftSlot | undefined>();
+  const [editingSlot, setEditingSlot] = useState<DraftSlot | undefined>(() =>
+    initialEditSlotId
+      ? value.timetableSlots.find(
+          (slot) => slot.temporaryId === initialEditSlotId,
+        )
+      : undefined,
+  );
   const [newSlotContext, setNewSlotContext] = useState<{
     day?: DayOfWeek;
     start?: string;
-    bulk?: boolean;
   }>();
+  const [addSubjectOpen, setAddSubjectOpen] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
 
@@ -102,17 +112,19 @@ export function DraftEditor({
   const saveSlot = (
     subject: DraftSubject | undefined,
     slot: DraftSlot,
-    additions: DraftSlot[],
+    editScope: DraftSlotEditScope,
   ) => {
     const exists = value.timetableSlots.some(
       (item) => item.temporaryId === slot.temporaryId,
     );
+    const original = editingSlot;
+    const applied = original
+      ? applyDraftSlotEdit(value.timetableSlots, original, slot, editScope)
+      : undefined;
     const baseSlots = exists
-      ? value.timetableSlots.map((item) =>
-          item.temporaryId === slot.temporaryId ? slot : item,
-        )
+      ? (applied?.slots ?? value.timetableSlots)
       : [...value.timetableSlots, slot];
-    const slots = [...baseSlots, ...additions];
+    const slots = baseSlots;
     const nextDraft = synchronizeDraftAlternatives(
       {
         ...value,
@@ -141,9 +153,35 @@ export function DraftEditor({
         : [],
     );
     onChange(nextDraft);
-    if (additions.length > 0) {
-      toast.success(`${additions.length + 1} class periods added`);
+    if (editScope !== "ONE_SESSION") {
+      const changed = applied?.changedCount ?? 1;
+      toast.success(`${changed} recurring sessions updated`);
     }
+  };
+
+  const addSubject = (subject: DraftSubject, slots: DraftSlot[]) => {
+    const nextSlots = [...value.timetableSlots, ...slots];
+    onChange(
+      synchronizeDraftAlternatives({
+        ...value,
+        subjects: mergeSubject(value.subjects, subject),
+        timetableSlots: nextSlots,
+        days: Array.from(
+          new Set([...value.days, ...slots.map((slot) => slot.dayOfWeek)]),
+        ),
+        timeSlots: Array.from(
+          new Map(
+            [...value.timeSlots, ...slots].map((slot) => [
+              `${slot.startTime}-${slot.endTime}`,
+              { startTime: slot.startTime, endTime: slot.endTime },
+            ]),
+          ).values(),
+        ).sort((left, right) => left.startTime.localeCompare(right.startTime)),
+      }),
+    );
+    toast.success(
+      `${subject.name} added with ${slots.length} recurring ${slots.length === 1 ? "session" : "sessions"}`,
+    );
   };
 
   const removeSlot = (slot: DraftSlot) => {
@@ -229,23 +267,13 @@ export function DraftEditor({
           </Button>
           <Button
             size="sm"
-            variant="outline"
             onClick={() => {
               setEditingSlot(undefined);
-              setNewSlotContext({ bulk: true });
-            }}
-          >
-            <Rows3 className="size-4" /> Bulk-add subject
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => {
-              setEditingSlot(undefined);
-              setNewSlotContext({});
+              setAddSubjectOpen(true);
             }}
             data-testid="add-class"
           >
-            <Plus className="size-4" /> Add class
+            <Plus className="size-4" /> Add Subject
           </Button>
         </div>
       </div>
@@ -314,6 +342,7 @@ export function DraftEditor({
           onAdd={(day, start) => {
             setEditingSlot(undefined);
             setNewSlotContext({ day, start });
+            setAddSubjectOpen(true);
           }}
           onEdit={(slot) => {
             setNewSlotContext(undefined);
@@ -327,7 +356,8 @@ export function DraftEditor({
               <CalendarRange className="text-primary mx-auto size-8" />
               <h3 className="mt-3 font-bold">Your timetable is empty</h3>
               <p className="text-muted-foreground mt-1 text-sm">
-                Add subjects one class at a time or paste a text schedule.
+                Add a subject with independent day timings, or paste a text
+                schedule.
               </p>
             </Card>
           ) : (
@@ -429,17 +459,27 @@ export function DraftEditor({
       ) : null}
 
       <SlotFormDialog
-        open={Boolean(editingSlot || newSlotContext)}
+        open={Boolean(editingSlot)}
         onClose={() => {
           setEditingSlot(undefined);
           setNewSlotContext(undefined);
         }}
         subjects={value.subjects}
         slot={editingSlot}
+        onSave={saveSlot}
+      />
+
+      <AddSubjectDialog
+        open={addSubjectOpen}
+        subjects={value.subjects}
+        existingSlots={value.timetableSlots}
         initialDay={newSlotContext?.day}
         initialStart={newSlotContext?.start}
-        bulk={newSlotContext?.bulk}
-        onSave={saveSlot}
+        onClose={() => {
+          setAddSubjectOpen(false);
+          setNewSlotContext(undefined);
+        }}
+        onSave={addSubject}
       />
 
       <Dialog

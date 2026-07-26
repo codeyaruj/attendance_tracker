@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyDraftSlotEdit,
   findDraftConflictSlotIds,
   mergeDuplicateSubjects,
   repeatDraftSlot,
@@ -177,5 +178,61 @@ describe("manual draft conveniences", () => {
         { ...overlap, batchOptions: ["B2"] },
       ]),
     ).toEqual(new Set());
+  });
+
+  it("edits only the selected recurring session by default", () => {
+    const monday = slot("monday");
+    const wednesday = {
+      ...slot("wednesday"),
+      dayOfWeek: "WEDNESDAY" as const,
+      startTime: "13:00",
+      endTime: "14:00",
+    };
+    const result = applyDraftSlotEdit(
+      [monday, wednesday],
+      monday,
+      { ...monday, startTime: "10:00", endTime: "11:30", room: "A-12" },
+      "ONE_SESSION",
+    );
+
+    expect(result.changedCount).toBe(1);
+    expect(result.slots[0]).toMatchObject({ startTime: "10:00", room: "A-12" });
+    expect(result.slots[1]).toEqual(wednesday);
+  });
+
+  it("shifts every subject session while preserving each weekday", () => {
+    const monday = slot("monday");
+    const mondayLater = {
+      ...slot("monday-later"),
+      startTime: "15:00",
+      endTime: "16:00",
+    };
+    const wednesday = {
+      ...slot("wednesday"),
+      dayOfWeek: "WEDNESDAY" as const,
+      startTime: "13:00",
+      endTime: "14:00",
+    };
+    const unrelated = slot("unrelated", "subject-b");
+    const result = applyDraftSlotEdit(
+      [monday, mondayLater, wednesday, unrelated],
+      monday,
+      { ...monday, startTime: "10:00", endTime: "12:00", faculty: ["AK"] },
+      "ALL_SUBJECT",
+    );
+
+    expect(result.changedCount).toBe(3);
+    expect(
+      result.slots.slice(0, 3).map(({ dayOfWeek, startTime, endTime }) => ({
+        dayOfWeek,
+        startTime,
+        endTime,
+      })),
+    ).toEqual([
+      { dayOfWeek: "MONDAY", startTime: "10:00", endTime: "12:00" },
+      { dayOfWeek: "MONDAY", startTime: "16:00", endTime: "18:00" },
+      { dayOfWeek: "WEDNESDAY", startTime: "14:00", endTime: "16:00" },
+    ]);
+    expect(result.slots[3]).toEqual(unrelated);
   });
 });

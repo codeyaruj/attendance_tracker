@@ -27,7 +27,6 @@ import {
   viewForSubject,
 } from "@/components/attendance/attendance-view-model";
 import {
-  applySessionDetailsOverride,
   ensureResolvedSessionExists,
   restoreResolvedSession,
 } from "@/components/attendance/session-persistence";
@@ -293,61 +292,109 @@ export function TodayScreen() {
       const source = sessions.find(
         (session) => session.id === values.sourceSessionId,
       );
+      if (values.kind === "EXTRA" || values.kind === "RESCHEDULE") {
+        const conflicts = resolveSnapshotSessionsForDate(
+          data,
+          values.date,
+        ).filter(
+          (session) =>
+            session.id !== source?.id &&
+            session.status !== "CANCELLED" &&
+            values.startTime < session.endTime &&
+            session.startTime < values.endTime,
+        );
+        if (conflicts.length) {
+          throw new Error(
+            `This time overlaps ${conflicts.length === 1 ? "another class" : `${conflicts.length} other classes`} on ${values.date}.`,
+          );
+        }
+      }
+      const timestamps = entityTimestamps();
       if (values.kind === "CANCELLATION") {
         if (!source) throw new Error("Choose the class to cancel.");
-        await ensureResolvedSessionExists(source);
-        await attendSafeRepository.markAttendance(
-          source.id,
-          "CANCELLED",
-          values.notes || undefined,
-        );
+        await attendSafeRepository.saveAcademicException({
+          id: createEntityId(),
+          semesterId: activeSemester.id,
+          timetableSlotId: source.timetableSlotId,
+          classSessionId: source.timetableSlotId ? undefined : source.id,
+          subjectId: source.subjectId,
+          type: "CANCELLED_SESSION",
+          startDate: values.date,
+          endDate: values.date,
+          notes: values.notes.trim() || undefined,
+          ...timestamps,
+        });
       } else if (values.kind === "OVERRIDE") {
         if (!source) throw new Error("Choose the class to update.");
-        await ensureResolvedSessionExists(source);
-        const persisted = await db.classSessions.get(source.id);
-        if (!persisted)
-          throw new Error("The selected class could not be saved.");
-        await attendSafeRepository.upsertSession(
-          applySessionDetailsOverride(persisted, values),
-          "Changed room or faculty for one class",
-        );
+        if (!values.faculty.trim() && !values.room.trim()) {
+          throw new Error("Enter a new room or faculty.");
+        }
+        await attendSafeRepository.saveAcademicException({
+          id: createEntityId(),
+          semesterId: activeSemester.id,
+          timetableSlotId: source.timetableSlotId,
+          classSessionId: source.id,
+          subjectId: source.subjectId,
+          type: "SESSION_OVERRIDE",
+          startDate: source.date,
+          endDate: source.date,
+          faculty: values.faculty.trim()
+            ? values.faculty
+                .split(",")
+                .map((name) => name.trim())
+                .filter(Boolean)
+            : undefined,
+          room: values.room.trim() || undefined,
+          notes: values.notes.trim() || undefined,
+          ...timestamps,
+        });
       } else {
         const subjectId =
           values.kind === "RESCHEDULE" ? source?.subjectId : values.subjectId;
         if (!subjectId) throw new Error("Choose a subject.");
         if (values.kind === "RESCHEDULE") {
           if (!source) throw new Error("Choose the class to reschedule.");
-          await ensureResolvedSessionExists(source);
-          await attendSafeRepository.markAttendance(
-            source.id,
-            "CANCELLED",
-            "Moved to another date",
-          );
-        }
-        const now = new Date().toISOString();
-        await attendSafeRepository.upsertSession(
-          {
+          await attendSafeRepository.saveAcademicException({
+            id: createEntityId(),
+            semesterId: activeSemester.id,
+            timetableSlotId: source.timetableSlotId,
+            classSessionId: source.id,
+            subjectId,
+            type: "RESCHEDULED_SESSION",
+            startDate: source.date,
+            endDate: source.date,
+            replacementDate: values.date,
+            startTime: values.startTime,
+            endTime: values.endTime,
+            faculty: values.faculty.trim()
+              ? values.faculty
+                  .split(",")
+                  .map((name) => name.trim())
+                  .filter(Boolean)
+              : source.faculty,
+            room: values.room.trim() || source.room,
+            notes: values.notes.trim() || "Moved to another date",
+            ...timestamps,
+          });
+        } else {
+          await attendSafeRepository.saveAcademicException({
             id: createEntityId(),
             semesterId: activeSemester.id,
             subjectId,
-            date: values.date,
+            type: "EXTRA_SESSION",
+            startDate: values.date,
+            endDate: values.date,
             startTime: values.startTime,
             endTime: values.endTime,
-            status: values.kind === "EXTRA" ? "EXTRA" : "RESCHEDULED",
-            source: values.kind === "EXTRA" ? "EXTRA" : "RESCHEDULED",
             faculty: values.faculty
               .split(",")
               .map((name) => name.trim())
               .filter(Boolean),
-            ...(values.room.trim() ? { room: values.room.trim() } : {}),
-            ...(values.notes.trim() ? { notes: values.notes.trim() } : {}),
-            createdAt: now,
-            updatedAt: now,
-          },
-          values.kind === "EXTRA"
-            ? "Added an extra class"
-            : "Added a rescheduled class",
-        );
+            room: values.room.trim() || undefined,
+            notes: values.notes.trim() || undefined,
+            ...timestamps,
+          });
+        }
       }
       setChangeOpen(false);
       toast.success(

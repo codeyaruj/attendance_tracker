@@ -7,7 +7,8 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Select, Textarea } from "@/components/ui/form-controls";
-import { minutesToTime, repeatDraftSlot, timeToMinutes } from "@/lib/timetable";
+import { minutesToTime, timeToMinutes } from "@/lib/timetable";
+import type { DraftSlotEditScope } from "@/lib/timetable";
 import { CLASS_TYPES, DAYS_OF_WEEK, WEEK_PATTERNS } from "@/types";
 import type { DraftSlot, DraftSubject } from "@/types";
 
@@ -33,8 +34,7 @@ const slotFormSchema = z
     isPlaceholder: z.boolean(),
     isBreak: z.boolean(),
     isEnabled: z.boolean(),
-    repeatDays: z.array(z.enum(DAYS_OF_WEEK)),
-    additionalPeriods: z.coerce.number().int().min(0).max(8),
+    editScope: z.enum(["ONE_SESSION", "WEEKDAY_SUBJECT", "ALL_SUBJECT"]),
   })
   .superRefine((values, context) => {
     if (!values.isBreak && !values.subjectName) {
@@ -85,8 +85,7 @@ function valuesFor(subjects: DraftSubject[], slot?: DraftSlot): SlotFormValues {
     isPlaceholder: slot?.isPlaceholder ?? false,
     isBreak: slot?.isBreak ?? false,
     isEnabled: slot?.isEnabled ?? true,
-    repeatDays: [],
-    additionalPeriods: 0,
+    editScope: "ONE_SESSION",
   };
 }
 
@@ -97,7 +96,6 @@ export function SlotFormDialog({
   slot,
   initialDay,
   initialStart,
-  bulk = false,
   onSave,
 }: {
   open: boolean;
@@ -106,11 +104,10 @@ export function SlotFormDialog({
   slot?: DraftSlot;
   initialDay?: DraftSlot["dayOfWeek"];
   initialStart?: string;
-  bulk?: boolean;
   onSave: (
     subject: DraftSubject | undefined,
     slot: DraftSlot,
-    additions: DraftSlot[],
+    editScope: DraftSlotEditScope,
   ) => void;
 }) {
   const {
@@ -138,10 +135,8 @@ export function SlotFormDialog({
 
   const selectedSubjectId = useWatch({ control, name: "subjectTemporaryId" });
   const weekPattern = useWatch({ control, name: "weekPattern" });
-  const selectedDay = useWatch({ control, name: "dayOfWeek" });
   const startTime = useWatch({ control, name: "startTime" });
   const endTime = useWatch({ control, name: "endTime" });
-  const repeatDays = useWatch({ control, name: "repeatDays" }) ?? [];
   const duration = (() => {
     const start = timeToMinutes(startTime);
     const end = timeToMinutes(endTime);
@@ -206,12 +201,7 @@ export function SlotFormDialog({
       isPlaceholder: values.isPlaceholder,
       isBreak: values.isBreak,
     };
-    const additions = repeatDraftSlot(
-      savedSlot,
-      values.repeatDays.filter((day) => day !== values.dayOfWeek),
-      values.additionalPeriods,
-    );
-    onSave(subject, savedSlot, additions);
+    onSave(subject, savedSlot, values.editScope);
     onClose();
   });
 
@@ -219,7 +209,7 @@ export function SlotFormDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title={slot ? "Edit class" : bulk ? "Bulk-add a subject" : "Add a class"}
+      title={slot ? "Edit class" : "Add a class"}
       description="Custom times, alternatives, batches, and alternating weeks are all supported."
     >
       <form onSubmit={submit} className="grid gap-5" data-testid="slot-form">
@@ -318,44 +308,37 @@ export function SlotFormDialog({
           </Field>
         </div>
 
-        <fieldset className="border-border grid gap-2 rounded-2xl border p-4">
-          <legend className="px-2 font-bold">Repeat on another day</legend>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {DAYS_OF_WEEK.filter((day) => day !== selectedDay).map((day) => (
+        {slot ? (
+          <fieldset className="border-border grid gap-2 rounded-2xl border p-4">
+            <legend className="px-2 font-bold">Apply changes to</legend>
+            {[
+              ["ONE_SESSION", "This recurring session only"],
+              [
+                "WEEKDAY_SUBJECT",
+                "Every session for this subject on this weekday",
+              ],
+              ["ALL_SUBJECT", "Every recurring session for this subject"],
+            ].map(([value, label]) => (
               <label
-                key={day}
-                className="bg-secondary flex min-h-10 cursor-pointer items-center gap-2 rounded-xl px-3 text-sm font-semibold"
+                key={value}
+                className="bg-secondary flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 text-sm font-semibold"
               >
                 <input
-                  type="checkbox"
-                  checked={repeatDays.includes(day)}
-                  onChange={(event) => {
-                    const next = event.target.checked
-                      ? DAYS_OF_WEEK.filter((value) =>
-                          [...repeatDays, day].includes(value),
-                        )
-                      : repeatDays.filter((value) => value !== day);
-                    setValue("repeatDays", next, { shouldDirty: true });
-                  }}
+                  type="radio"
+                  value={value}
                   className="accent-primary size-4"
+                  {...register("editScope")}
                 />
-                {day[0] + day.slice(1, 3).toLowerCase()}
+                {label}
               </label>
             ))}
-          </div>
-          <Field
-            label="Additional consecutive periods"
-            hint="Creates the same subject in the following time blocks on every selected day."
-          >
-            <Input
-              type="number"
-              min="0"
-              max="8"
-              step="1"
-              {...register("additionalPeriods")}
-            />
-          </Field>
-        </fieldset>
+            <p className="text-muted-foreground text-xs leading-5">
+              Multi-session edits shift matching times by the same amount and
+              preserve each session’s weekday. Existing attendance remains
+              attached to the earlier timetable version.
+            </p>
+          </fieldset>
+        ) : null}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Faculty" hint="Separate multiple names with commas">

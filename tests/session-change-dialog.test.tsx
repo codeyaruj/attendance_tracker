@@ -69,4 +69,27 @@ describe("SessionChangeDialog", () => {
       screen.getByRole("button", { name: "Save class details" }),
     ).toBeEnabled();
   });
+
+  it("allows cancelling the recurring class on a chosen date", () => {
+    render(
+      <SessionChangeDialog
+        open
+        date={session.date}
+        subjects={[subject]}
+        sessions={[session]}
+        busy={false}
+        onClose={vi.fn()}
+        onSubmit={vi.fn(async () => undefined)}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Change type" }), {
+      target: { value: "CANCELLATION" },
+    });
+
+    expect(screen.getByLabelText("Cancellation date")).toHaveValue(
+      "2026-07-23",
+    );
+    expect(screen.getByRole("button", { name: "Cancel class" })).toBeEnabled();
+  });
 });

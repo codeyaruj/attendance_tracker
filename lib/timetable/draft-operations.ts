@@ -5,6 +5,83 @@ import type {
   NormalizedTimetableDraft,
 } from "@/types/draft";
 
+export type DraftSlotEditScope =
+  "ONE_SESSION" | "WEEKDAY_SUBJECT" | "ALL_SUBJECT";
+
+function editTimeToMinutes(value: string): number | undefined {
+  const match = value.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return undefined;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return undefined;
+  return hour * 60 + minute;
+}
+
+function editMinutesToTime(value: number): string | undefined {
+  if (!Number.isInteger(value) || value < 0 || value >= 24 * 60)
+    return undefined;
+  return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+}
+
+export function applyDraftSlotEdit(
+  slots: readonly DraftSlot[],
+  original: DraftSlot,
+  updated: DraftSlot,
+  scope: DraftSlotEditScope,
+): { slots: DraftSlot[]; changedCount: number } {
+  const startDelta =
+    (editTimeToMinutes(updated.startTime) ?? 0) -
+    (editTimeToMinutes(original.startTime) ?? 0);
+  const nextDuration = Math.max(
+    1,
+    (editTimeToMinutes(updated.endTime) ?? 0) -
+      (editTimeToMinutes(updated.startTime) ?? 0),
+  );
+  let changedCount = 0;
+  return {
+    slots: slots.map((slot) => {
+      const isSelected = slot.temporaryId === original.temporaryId;
+      const isSameSubject =
+        slot.subjectTemporaryId === original.subjectTemporaryId;
+      const isInScope =
+        isSelected ||
+        (isSameSubject && scope === "ALL_SUBJECT") ||
+        (isSameSubject &&
+          scope === "WEEKDAY_SUBJECT" &&
+          slot.dayOfWeek === original.dayOfWeek);
+      if (!isInScope) return slot;
+      changedCount += 1;
+      if (isSelected) return updated;
+      const shiftedStart = editMinutesToTime(
+        (editTimeToMinutes(slot.startTime) ?? 0) + startDelta,
+      );
+      const shiftedEnd = shiftedStart
+        ? editMinutesToTime(
+            (editTimeToMinutes(shiftedStart) ?? 0) + nextDuration,
+          )
+        : undefined;
+      return {
+        ...slot,
+        subjectTemporaryId: updated.subjectTemporaryId,
+        ...(scope === "WEEKDAY_SUBJECT"
+          ? { dayOfWeek: updated.dayOfWeek }
+          : {}),
+        ...(shiftedStart && shiftedEnd
+          ? { startTime: shiftedStart, endTime: shiftedEnd }
+          : {}),
+        faculty: [...updated.faculty],
+        room: updated.room,
+        classType: updated.classType,
+        weekPattern: updated.weekPattern,
+        customWeekPattern: updated.customWeekPattern,
+        batchOptions: [...updated.batchOptions],
+        notes: updated.notes,
+      };
+    }),
+    changedCount,
+  };
+}
+
 function normalizedKey(value?: string): string | undefined {
   const normalized = value?.trim().toLocaleLowerCase().replace(/\s+/g, " ");
   return normalized || undefined;

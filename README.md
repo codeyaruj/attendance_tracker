@@ -106,6 +106,8 @@ The normalized schema is defined in `types/domain.ts` and persisted through `db/
 
 Recurring timetable entries are not pre-expanded for the semester. `lib/timetable/` resolves only the requested date/range, selecting the correct confirmed timetable version and applying user filters, week recurrence, persisted overrides, and academic exceptions.
 
+Manual creation adds one subject at a time. Every chosen weekday owns one or more independent start/end ranges, so a subject can meet at different times across the week or twice on one day. A weekly preview and conflict check run before the sessions enter the draft. Saved edits create an immutable effective-dated timetable version; one-off extras, cancellations, reschedules, and room/faculty changes remain dated academic exceptions. Existing attendance therefore stays attached to the session and version against which it was recorded.
+
 Attendance calculations in `lib/attendance/` use integer counts and basis points. Threshold comparisons use exact fraction arithmetic, avoiding floating-point decisions at boundary values.
 
 For a threshold `T` stored in basis points, the engine compares `attended × 10,000` with `held × T`. The current percentage is `attended / held`; no percentage is returned when `held` is zero. The maximum additional skips are `floor((attended × 10,000) / T − held)`, and recovery attendance is `ceil((T × held − attended × 10,000) / (10,000 − T))`, with explicit handling for zero and 100% thresholds.

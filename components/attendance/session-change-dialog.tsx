@@ -144,10 +144,18 @@ export function SessionChangeDialog({
           </Field>
         )}
 
-        {kind === "EXTRA" || kind === "RESCHEDULE" ? (
+        {kind === "EXTRA" ||
+        kind === "RESCHEDULE" ||
+        kind === "CANCELLATION" ? (
           <>
             <Field
-              label={kind === "RESCHEDULE" ? "New date" : "Date"}
+              label={
+                kind === "RESCHEDULE"
+                  ? "New date"
+                  : kind === "CANCELLATION"
+                    ? "Cancellation date"
+                    : "Date"
+              }
               error={errors.date?.message}
             >
               <Input
@@ -155,35 +163,44 @@ export function SessionChangeDialog({
                 {...register("date", { required: "Choose a date." })}
               />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Starts" error={errors.startTime?.message}>
-                <Input
-                  type="time"
-                  {...register("startTime", { required: "Add a start time." })}
-                />
-              </Field>
-              <Field label="Ends" error={errors.endTime?.message}>
-                <Input
-                  type="time"
-                  {...register("endTime", {
-                    required: "Add an end time.",
-                    validate: (value, values) =>
-                      value > values.startTime || "End time must be later.",
-                  })}
-                />
-              </Field>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field
-                label="Faculty"
-                hint="Separate multiple names with commas."
-              >
-                <Input placeholder="e.g. Prof. Rao" {...register("faculty")} />
-              </Field>
-              <Field label="Room">
-                <Input placeholder="e.g. AB-304" {...register("room")} />
-              </Field>
-            </div>
+            {kind !== "CANCELLATION" ? (
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Starts" error={errors.startTime?.message}>
+                  <Input
+                    type="time"
+                    {...register("startTime", {
+                      required: "Add a start time.",
+                    })}
+                  />
+                </Field>
+                <Field label="Ends" error={errors.endTime?.message}>
+                  <Input
+                    type="time"
+                    {...register("endTime", {
+                      required: "Add an end time.",
+                      validate: (value, values) =>
+                        value > values.startTime || "End time must be later.",
+                    })}
+                  />
+                </Field>
+              </div>
+            ) : null}
+            {kind !== "CANCELLATION" ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field
+                  label="Faculty"
+                  hint="Separate multiple names with commas."
+                >
+                  <Input
+                    placeholder="e.g. Prof. Rao"
+                    {...register("faculty")}
+                  />
+                </Field>
+                <Field label="Room">
+                  <Input placeholder="e.g. AB-304" {...register("room")} />
+                </Field>
+              </div>
+            ) : null}
           </>
         ) : null}
 

@@ -28,6 +28,10 @@ The computer-vision implementation uses browser Canvas and typed arrays rather t
 
 Perspective handling is conservative: the outer grid is evaluated and an axis-aligned crop is retained when a safe projective warp cannot be established. Strong keystone distortion, curved pages, handwriting, borderless tables, rotated text, and dense nested legends can still require a straighter photo or manual correction; extraction is probabilistic, not authoritative.
 
+## Timetable editing
+
+A subject does not own a shared `days[]` and time range. Each weekly recurrence is an independent `TimetableSlot`, allowing different times per weekday and multiple same-day sessions. Draft creation checks invalid ranges, exact duplicates, and overlapping slots before confirmation. Recurring edits are saved as a new effective-dated `TimetableVersion`; older slots and materialized attendance sessions are retained. Dated extras, cancellations, reschedules, and room/faculty overrides use `AcademicException`, so a normal one-off change never mutates the recurring schedule. This redesign uses the existing schema and therefore requires no IndexedDB migration.
+
 ## PWA and cache policy
 
 The production client registers `/sw.js` once at root scope. Known navigation routes are network-first with shell fallback; immutable Next.js/icon assets are cache-first; OCR resources are cached on first use. Only caches with AttendSafe-owned prefixes are migrated or cleared. Non-GET, cross-origin, API-like, attachment, backup, blob/data URL, private, no-store, opaque, failed, and unknown responses are excluded.

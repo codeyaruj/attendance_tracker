@@ -54,6 +54,29 @@ describe("dated timetable editing", () => {
       ],
     });
     const now = "2026-07-23T10:00:00.000Z";
+    await database.classSessions.add({
+      id: "historic-session",
+      semesterId: setup.semester.id,
+      subjectId: first.subjects[0].id,
+      timetableSlotId: first.slots[0].id,
+      timetableVersionId: first.version.id,
+      date: "2026-07-07",
+      startTime: "09:00",
+      endTime: "10:00",
+      status: "HELD",
+      source: "TIMETABLE",
+      faculty: [],
+      createdAt: now,
+      updatedAt: now,
+    });
+    await database.attendanceRecords.add({
+      id: "historic-attendance",
+      classSessionId: "historic-session",
+      status: "PRESENT",
+      markedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
     const secondVersionId = crypto.randomUUID();
     const second = {
       timetable: { ...first.timetable, updatedAt: now },
@@ -111,5 +134,9 @@ describe("dated timetable editing", () => {
       (await database.semesters.get(setup.semester.id))
         ?.activeTimetableVersionId,
     ).toBe(secondVersionId);
+    expect(await database.classSessions.get("historic-session")).toBeDefined();
+    expect(
+      await database.attendanceRecords.get("historic-attendance"),
+    ).toMatchObject({ status: "PRESENT" });
   });
 });

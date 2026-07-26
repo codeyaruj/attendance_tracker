@@ -128,6 +128,12 @@ export class AttendSafeRepository {
     return saveTimetableBundle(this.database(), bundle);
   }
 
+  saveAcademicException(
+    exception: AcademicException,
+  ): Promise<AcademicException> {
+    return saveAcademicException(this.database(), exception);
+  }
+
   async markAttendance(
     classSessionId: string,
     status: MarkAttendanceStatus,
