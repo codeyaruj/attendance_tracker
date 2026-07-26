@@ -249,6 +249,47 @@ test("demo setup supports batch and elective selection", async ({ page }) => {
   );
 });
 
+test("demo mode exits to setup without deleting demo data", async ({
+  page,
+}) => {
+  await loadDemo(page);
+  await page.goto("/");
+  await expect(page.getByTestId("choose-manual")).toBeVisible();
+  expect((await readStore(page, "profiles")).length).toBe(1);
+  await page.goto("/dashboard");
+  await expect(page.getByText("You are exploring demo data.")).toBeVisible();
+  await page.getByTestId("exit-demo").first().click();
+  const dialog = page.getByRole("dialog", { name: "Exit demo" });
+  await expect(dialog).toContainText("demo data will stay");
+  await dialog.getByRole("button", { name: "Start fresh setup" }).click();
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId("choose-manual")).toBeVisible();
+  expect((await readStore(page, "profiles")).length).toBe(1);
+  expect((await readStore(page, "semesters")).length).toBe(1);
+  expect((await readStore(page, "timetableSlots")).length).toBeGreaterThan(0);
+});
+
+test("demo exit can continue directly into real profile setup", async ({
+  page,
+}) => {
+  await loadDemo(page);
+  await page.goto("/settings");
+  const profileSection = page.locator("#profile-semester");
+  await expect(profileSection.getByText("Demo profile")).toBeVisible();
+  await profileSection.getByTestId("exit-demo").click();
+  await page
+    .getByRole("dialog", { name: "Exit demo" })
+    .getByRole("button", { name: "Create a real profile" })
+    .click();
+
+  await expect(page.getByTestId("profile-setup-form")).toBeVisible();
+  expect((await readStore(page, "profiles")).length).toBe(1);
+  const settings = await readStore(page, "appSettings");
+  expect(settings[0]?.activeProfileId).toBeUndefined();
+  expect(settings[0]?.activeSemesterId).toBeUndefined();
+});
+
 test("a single attendance mark can be undone", async ({ page }) => {
   await openTodayWithDemo(page);
   await markFirstClassPresent(page);

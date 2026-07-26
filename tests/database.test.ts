@@ -12,6 +12,9 @@ import { SCHEMA_V1, SCHEMA_V3 } from "@/db/schema";
 import {
   createProfileSetup,
   resetApplication,
+  deleteDemoData,
+  exitDemoMode,
+  installDemoData,
   resetSemester,
 } from "@/db/services";
 
@@ -413,6 +416,51 @@ describe("AttendSafeDatabase", () => {
     expect(await database.appSettings.get("app")).toMatchObject({
       id: "app",
       theme: "SYSTEM",
+    });
+  });
+
+  it("exits demo mode without deleting demo records", async () => {
+    const database = createDatabase();
+    const demo = await installDemoData(database);
+
+    await exitDemoMode(database);
+
+    expect(await database.profiles.get(demo.profile.id)).toBeDefined();
+    expect(await database.semesters.get(demo.semester.id)).toBeDefined();
+    expect(await database.timetableSlots.count()).toBeGreaterThan(0);
+    expect(await database.appSettings.get("app")).toMatchObject({
+      activeProfileId: undefined,
+      activeSemesterId: undefined,
+      selectedBatch: undefined,
+    });
+  });
+
+  it("deletes only demo data after separate confirmation", async () => {
+    const database = createDatabase();
+    const real = await createProfileSetup(database, {
+      profile: { displayName: "Asha" },
+      semester: {
+        name: "Semester 5",
+        startDate: "2026-07-01",
+        endDate: "2026-12-15",
+      },
+    });
+    const demo = await installDemoData(database);
+    await database.appSettings.update("app", {
+      activeProfileId: real.profile.id,
+      activeSemesterId: real.semester.id,
+    });
+
+    await expect(deleteDemoData(database, false)).rejects.toThrow(
+      "requires confirmation",
+    );
+    await deleteDemoData(database, true);
+
+    expect(await database.profiles.get(demo.profile.id)).toBeUndefined();
+    expect(await database.profiles.get(real.profile.id)).toBeDefined();
+    expect(await database.appSettings.get("app")).toMatchObject({
+      activeProfileId: real.profile.id,
+      activeSemesterId: real.semester.id,
     });
   });
 });

@@ -23,6 +23,7 @@ import type { ManualTimetableInput } from "@/db";
 import { useAttendSafeData } from "@/hooks/use-attendsafe-data";
 import { AttendanceUnavailableState } from "@/components/attendance/data-state";
 import { parseSemesterExceptionEntries } from "@/lib/academic-exception-input";
+import { DEMO_IDS } from "@/lib/demo";
 import type { NormalizedTimetableDraft } from "@/types";
 import { DAYS_OF_WEEK } from "@/types";
 import { DraftEditor } from "../timetable/draft-editor";
@@ -152,11 +153,20 @@ export function Onboarding() {
   const [demoLoading, setDemoLoading] = useState(false);
 
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("new-profile")) {
+      window.history.replaceState({}, "", "/");
+      const timer = window.setTimeout(() => setStage("PROFILE"), 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, []);
+
+  useEffect(() => {
     if (
       stage === "CHOICE" &&
       availability === "READY" &&
       data?.activeProfile &&
-      data.activeSemester
+      data.activeSemester &&
+      data.activeProfile.id !== DEMO_IDS.profile
     ) {
       router.replace("/today");
     }
@@ -180,7 +190,11 @@ export function Onboarding() {
 
   if (
     stage === "CHOICE" &&
-    (loading || availability === "CHECKING" || Boolean(data?.activeSemester))
+    (loading ||
+      availability === "CHECKING" ||
+      Boolean(
+        data?.activeSemester && data.activeProfile?.id !== DEMO_IDS.profile,
+      ))
   ) {
     return (
       <div

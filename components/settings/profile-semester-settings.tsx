@@ -6,6 +6,7 @@ import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { DemoProfileActions } from "@/components/demo/demo-exit";
 import { Field, Input, Select } from "@/components/ui/form-controls";
 import {
   attendSafeRepository,
@@ -17,6 +18,7 @@ import {
 } from "@/db";
 import { DAYS_OF_WEEK, type DayOfWeek } from "@/types/domain";
 import { timeZoneSchema } from "@/lib/validation";
+import { DEMO_IDS } from "@/lib/demo";
 
 import {
   basisPointsToPercentage,
@@ -267,6 +269,7 @@ export function ProfileSemesterSettings({
         </Button>
       }
     >
+      {profile?.id === DEMO_IDS.profile ? <DemoProfileActions /> : null}
       {showNewProfile ? (
         <form
           className="bg-secondary mb-6 grid gap-3 rounded-2xl p-4 sm:grid-cols-2"

@@ -17,11 +17,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Brand } from "./brand";
+import { DemoExitButton } from "@/components/demo/demo-exit";
 import { OfflineIndicator } from "./offline-indicator";
 import { Button } from "@/components/ui/button";
 import { attendSafeRepository } from "@/db";
 import { useAttendSafeData } from "@/hooks/use-attendsafe-data";
 import { cn } from "@/lib/utils";
+import { DEMO_IDS } from "@/lib/demo";
 
 const navigation = [
   { href: "/today", label: "Today", icon: CalendarCheck2 },
@@ -250,6 +252,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </header>
+
+        {data?.activeProfile?.id === DEMO_IDS.profile ? (
+          <div className="border-warning/40 bg-warning-soft border-b px-4 py-3 sm:px-6 lg:px-8">
+            <div className="mx-auto flex max-w-[1440px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-bold">You are exploring demo data.</p>
+                <p className="text-muted-foreground text-sm">
+                  Exit whenever you are ready; the demo will be preserved.
+                </p>
+              </div>
+              <DemoExitButton className="self-start sm:self-auto" />
+            </div>
+          </div>
+        ) : null}
 
         <main className="mx-auto max-w-[1440px] px-4 pt-5 pb-28 sm:px-6 lg:px-8 lg:pt-7 lg:pb-10">
           {children}

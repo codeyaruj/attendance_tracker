@@ -15,7 +15,7 @@ import type {
   TimetableVersion,
   UploadedTimetableReference,
 } from "@/types/domain";
-import { createDemoTimetable } from "@/lib/demo/timetable";
+import { createDemoTimetable, DEMO_IDS } from "@/lib/demo/timetable";
 import { academicExceptionSchema } from "@/lib/validation";
 
 import type { AttendSafeDatabase } from "./database";
@@ -840,6 +840,33 @@ export async function resetApplication(
     }
     await database.appSettings.put(defaultAppSettings());
   });
+}
+
+export async function exitDemoMode(
+  database: AttendSafeDatabase,
+): Promise<void> {
+  await database.transaction("rw", database.appSettings, async () => {
+    const settings =
+      (await database.appSettings.get("app")) ?? defaultAppSettings();
+    if (settings.activeProfileId !== DEMO_IDS.profile) {
+      throw new Error("Demo mode is not currently active.");
+    }
+    await database.appSettings.put({
+      ...settings,
+      activeProfileId: undefined,
+      activeSemesterId: undefined,
+      selectedBatch: undefined,
+      updatedAt: new Date().toISOString(),
+    });
+  });
+}
+
+export async function deleteDemoData(
+  database: AttendSafeDatabase,
+  confirmed: boolean,
+): Promise<void> {
+  if (!confirmed) throw new Error("Deleting demo data requires confirmation.");
+  await deleteProfile(database, DEMO_IDS.profile, true);
 }
 
 const CORE_SUBJECTS = [

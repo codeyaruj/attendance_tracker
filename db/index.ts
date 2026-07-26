@@ -35,7 +35,9 @@ import {
 } from "./repositories";
 import {
   createProfileSetup,
+  deleteDemoData,
   deleteProfile,
+  exitDemoMode,
   getDatabaseSnapshot,
   installDemoData,
   resetApplication,
@@ -108,6 +110,14 @@ export class AttendSafeRepository {
 
   installDemo(displayName?: string): ReturnType<typeof installDemoData> {
     return installDemoData(this.database(), displayName);
+  }
+
+  exitDemo(): Promise<void> {
+    return exitDemoMode(this.database());
+  }
+
+  deleteDemo(confirmed: boolean): Promise<void> {
+    return deleteDemoData(this.database(), confirmed);
   }
 
   saveManualTimetable(input: ManualTimetableInput): Promise<TimetableBundle> {
