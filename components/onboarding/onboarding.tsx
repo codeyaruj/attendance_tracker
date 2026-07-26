@@ -455,6 +455,18 @@ export function Onboarding() {
               Add your timetable, mark attendance, and see exactly which
               upcoming classes keep every subject above your target.
             </p>
+            <div className="border-primary/20 bg-primary-soft/60 mt-5 max-w-lg rounded-2xl border p-4 text-sm leading-6">
+              <p className="font-bold">Private by default</p>
+              <p className="text-muted-foreground mt-1">
+                Your timetable and attendance records are stored locally on this
+                device. No account or internet connection is required for normal
+                use.
+              </p>
+              <p className="text-muted-foreground mt-2 text-xs">
+                Export a backup before changing phones, browsers, domains, or
+                deleting site data.
+              </p>
+            </div>
             <div className="mt-7 grid max-w-lg grid-cols-3 gap-2 text-center">
               <div className="bg-surface rounded-2xl p-3">
                 <p className="text-primary text-lg font-black">100%</p>

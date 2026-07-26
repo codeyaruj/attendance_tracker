@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest a local-first, free enhancement.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: User need
+      description: Describe the problem without personal data.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed local-first solution
+    validations:
+      required: true
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Architecture constraints
+      options:
+        - label: This does not require accounts, a backend, cloud storage, or a paid service.
+          required: true

@@ -1,0 +1,36 @@
+name: Release check
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-check-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NEXT_PUBLIC_SITE_URL: https://attendance.example.pages.dev
+  TZ: UTC
+
+jobs:
+  release-verification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - run: pnpm verify:release

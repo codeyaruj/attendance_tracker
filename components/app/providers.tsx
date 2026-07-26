@@ -3,6 +3,8 @@
 import { useEffect } from "react";
 import { Toaster } from "sonner";
 
+import { AppInstallProvider } from "@/hooks/use-app-install";
+
 import { PwaLifecycle } from "./pwa-lifecycle";
 
 function applyStoredTheme(): void {
@@ -25,10 +27,10 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <>
+    <AppInstallProvider>
       {children}
       <PwaLifecycle />
       <Toaster position="top-center" richColors closeButton />
-    </>
+    </AppInstallProvider>
   );
 }

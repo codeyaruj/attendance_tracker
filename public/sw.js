@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v4";
+const CACHE_VERSION = "v5";
 const SHELL_CACHE = `attendsafe-shell-${CACHE_VERSION}`;
 const STATIC_CACHE = `attendsafe-static-${CACHE_VERSION}`;
 const OCR_CACHE = `attendsafe-ocr-${CACHE_VERSION}`;
@@ -76,6 +76,21 @@ async function putIfSafe(cacheName, request, response) {
 async function cacheInstallShell() {
   const shell = await caches.open(SHELL_CACHE);
   const staticCache = await caches.open(STATIC_CACHE);
+  const assetQueue = [];
+  const discoveredAssets = new Set();
+
+  const discoverAsset = (value) => {
+    const asset = new URL(value, self.location.origin);
+    if (
+      asset.origin === self.location.origin &&
+      immutableAsset(asset.pathname) &&
+      !discoveredAssets.has(asset.href)
+    ) {
+      discoveredAssets.add(asset.href);
+      assetQueue.push(asset.href);
+    }
+  };
+
   for (const path of INSTALL_SHELL) {
     const response = await fetch(path, { cache: "reload" });
     if (!safeResponse(response)) throw new Error(`Could not cache ${path}`);
@@ -83,14 +98,28 @@ async function cacheInstallShell() {
     if (response.headers.get("content-type")?.includes("text/html")) {
       const html = await response.text();
       for (const match of html.matchAll(/(?:src|href)=["']([^"']+)["']/g)) {
-        const asset = new URL(match[1], self.location.origin);
-        if (asset.origin !== self.location.origin || !immutableAsset(asset.pathname)) {
-          continue;
-        }
-        const assetResponse = await fetch(asset.href, { cache: "reload" });
-        if (safeResponse(assetResponse)) {
-          await staticCache.put(asset.href, assetResponse);
-        }
+        discoverAsset(match[1]);
+      }
+    }
+  }
+
+  // Turbopack route chunks can lazy-load other chunks that are not directly
+  // referenced by the exported HTML. Follow those same-origin references so
+  // every installed application route hydrates without a network connection.
+  while (assetQueue.length > 0) {
+    const assetUrl = assetQueue.shift();
+    const assetResponse = await fetch(assetUrl, { cache: "reload" });
+    if (!safeResponse(assetResponse)) {
+      throw new Error(`Could not cache ${assetUrl}`);
+    }
+    await staticCache.put(assetUrl, assetResponse.clone());
+    if (new URL(assetUrl).pathname.endsWith(".js")) {
+      const source = await assetResponse.text();
+      for (const match of source.matchAll(/(?:\/_next\/)?static\/chunks\/[a-zA-Z0-9_.-]+\.js/g)) {
+        const path = match[0].startsWith("/_next/")
+          ? match[0]
+          : `/_next/${match[0]}`;
+        discoverAsset(path);
       }
     }
   }

@@ -13,6 +13,10 @@
 
 # testing
 /coverage
+/playwright-report/
+/test-results/
+/blob-report/
+*.lcov
 
 # next.js
 /.next/
@@ -43,6 +47,19 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
-/playwright-report/
-/test-results/
 /public/ocr-assets/
+
+# local application data and user exports
+*.backup.json
+attendance-tracker-backup-*.json
+/uploads/
+/local-data/
+/tmp/
+/temp/
+
+# IDE and operating-system private state
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json

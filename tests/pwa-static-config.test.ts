@@ -57,7 +57,7 @@ describe("static PWA configuration", () => {
 
   it("uses positive cache allowlists and protects private content", async () => {
     const worker = await readFile("public/sw.js", "utf8");
-    expect(worker).toContain('const CACHE_VERSION = "v4"');
+    expect(worker).toContain('const CACHE_VERSION = "v5"');
     expect(worker).toContain('url.pathname.startsWith("/api/")');
     expect(worker).toContain('cacheControl.includes("no-store")');
     expect(worker).toContain('cacheControl.includes("private")');

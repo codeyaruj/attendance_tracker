@@ -1,0 +1,11 @@
+{
+  "exceptions": [
+    {
+      "githubAdvisoryId": "GHSA-mh99-v99m-4gvg",
+      "package": "brace-expansion",
+      "devOnly": true,
+      "expiresAt": "2026-10-31",
+      "reason": "Current Next.js ESLint plugins still require minimatch 3 and brace-expansion 1. Forcing brace-expansion 5 breaks ESLint. The affected glob input is repository-controlled, and this dependency is absent from the static production output. Recheck on every Dependabot update."
+    }
+  ]
+}

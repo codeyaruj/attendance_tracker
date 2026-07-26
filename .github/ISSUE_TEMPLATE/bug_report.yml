@@ -1,0 +1,33 @@
+name: Bug report
+description: Report a reproducible problem using synthetic data only.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not attach real timetables, attendance records, backups, or secrets. Security issues belong in private vulnerability reporting.
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem
+      description: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or deployment URL
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Synthetic reproduction
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Browser and operating system
+    validations:
+      required: true

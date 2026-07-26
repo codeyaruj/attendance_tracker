@@ -96,7 +96,7 @@ export function WeeklyGridBuilder({
                               />
                             ) : null}
                           </span>
-                          <span className="mt-1 block text-[10px] opacity-80">
+                          <span className="mt-1 block text-[10px]">
                             {slot.startTime}–{slot.endTime}
                           </span>
                           {slot.batchOptions.length > 0 ? (

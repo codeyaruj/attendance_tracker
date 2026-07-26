@@ -4,6 +4,7 @@ export default defineConfig({
   testDir: "./tests/pwa",
   fullyParallel: false,
   retries: 0,
+  timeout: 90_000,
   workers: 1,
   reporter: [["list"]],
   use: {

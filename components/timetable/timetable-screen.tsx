@@ -355,13 +355,11 @@ function SlotPill({
           ? "Break"
           : subject?.shortName || subject?.name || "Unassigned"}
       </span>
-      <span className="mt-1 block text-xs opacity-80">
+      <span className="mt-1 block text-xs">
         {formatClockTime(slot.startTime)}–{formatClockTime(slot.endTime)}
       </span>
       {slot.room ? (
-        <span className="mt-1 block truncate text-[11px] opacity-75">
-          {slot.room}
-        </span>
+        <span className="mt-1 block truncate text-[11px]">{slot.room}</span>
       ) : null}
     </button>
   );
@@ -643,7 +641,7 @@ export function TimetableScreen() {
                       )}
                     >
                       {titleCase(day).slice(0, 3)}
-                      <span className="mt-0.5 block text-[10px] font-medium opacity-70">
+                      <span className="mt-0.5 block text-[10px] font-medium">
                         {count} classes
                       </span>
                     </button>

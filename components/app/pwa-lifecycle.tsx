@@ -6,60 +6,26 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { attendSafeRepository } from "@/db";
+import { useAppInstall } from "@/hooks/use-app-install";
 import { criticalOperationActive } from "@/lib/pwa/critical-operation";
-
-interface InstallPromptEvent extends Event {
-  prompt(): Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-}
-
-const INSTALL_DISMISSED = "attendsafe-install-guidance-dismissed";
-
-function standalone(): boolean {
-  return (
-    window.matchMedia("(display-mode: standalone)").matches ||
-    Boolean((navigator as Navigator & { standalone?: boolean }).standalone)
-  );
-}
-
-function likelyIosInstallCandidate(): boolean {
-  return (
-    navigator.maxTouchPoints > 0 &&
-    typeof CSS !== "undefined" &&
-    CSS.supports?.("-webkit-touch-callout", "none") &&
-    !standalone()
-  );
-}
 
 export function PwaLifecycle() {
   const [waiting, setWaiting] = useState<ServiceWorker>();
-  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent>();
-  const [showIosHelp, setShowIosHelp] = useState(false);
+  const {
+    method,
+    outcome,
+    promotionalDismissed,
+    promptNativeInstall,
+    dismissPromotion,
+  } = useAppInstall();
   const reloading = useRef(false);
 
   useEffect(() => {
-    const dismissed = localStorage.getItem(INSTALL_DISMISSED) === "yes";
-    const guidanceTimer = window.setTimeout(
-      () => setShowIosHelp(!dismissed && likelyIosInstallCandidate()),
-      0,
-    );
-
-    const captureInstall = (event: Event) => {
-      event.preventDefault();
-      if (!standalone() && !dismissed) {
-        setInstallPrompt(event as InstallPromptEvent);
-      }
-    };
-    window.addEventListener("beforeinstallprompt", captureInstall);
-
     if (
       process.env.NODE_ENV !== "production" ||
       !("serviceWorker" in navigator)
     ) {
-      return () => {
-        window.clearTimeout(guidanceTimer);
-        window.removeEventListener("beforeinstallprompt", captureInstall);
-      };
+      return;
     }
 
     let disposed = false;
@@ -99,28 +65,12 @@ export function PwaLifecycle() {
 
     return () => {
       disposed = true;
-      window.clearTimeout(guidanceTimer);
-      window.removeEventListener("beforeinstallprompt", captureInstall);
       navigator.serviceWorker.removeEventListener(
         "controllerchange",
         controllerChanged,
       );
     };
   }, []);
-
-  const dismissInstall = () => {
-    localStorage.setItem(INSTALL_DISMISSED, "yes");
-    setInstallPrompt(undefined);
-    setShowIosHelp(false);
-  };
-
-  const install = async () => {
-    if (!installPrompt) return;
-    await installPrompt.prompt();
-    const choice = await installPrompt.userChoice;
-    if (choice.outcome === "accepted") setInstallPrompt(undefined);
-    else dismissInstall();
-  };
 
   const update = () => {
     if (!waiting) return;
@@ -134,7 +84,8 @@ export function PwaLifecycle() {
     waiting.postMessage({ type: "SKIP_WAITING" });
   };
 
-  if (!waiting && !installPrompt && !showIosHelp) return null;
+  const showInstall = method === "NATIVE" && !promotionalDismissed;
+  if (!waiting && !showInstall) return null;
 
   return (
     <aside
@@ -164,32 +115,34 @@ export function PwaLifecycle() {
             </div>
           </div>
         </div>
-      ) : (
+      ) : showInstall ? (
         <div className="flex items-start gap-3">
           <Download className="text-primary mt-1 size-5 shrink-0" />
           <div className="min-w-0 flex-1">
             <p className="font-bold">Install AttendSafe on this device</p>
             <p className="text-muted-foreground mt-1 text-sm">
-              {installPrompt
-                ? "Open it like an app. Installation does not copy data from another device."
-                : "In Safari, tap Share, then Add to Home Screen. Installation does not copy data."}
+              Open it like an app. Installation does not copy data from another
+              device.
             </p>
-            {installPrompt ? (
-              <Button size="sm" className="mt-3" onClick={() => void install()}>
-                Install app
-              </Button>
-            ) : null}
+            <Button
+              size="sm"
+              className="mt-3"
+              disabled={outcome === "INSTALLING"}
+              onClick={() => void promptNativeInstall()}
+            >
+              {outcome === "INSTALLING" ? "Installing…" : "Install app"}
+            </Button>
           </div>
           <Button
             size="icon"
             variant="ghost"
-            onClick={dismissInstall}
+            onClick={dismissPromotion}
             aria-label="Dismiss installation guidance"
           >
             <X className="size-4" />
           </Button>
         </div>
-      )}
+      ) : null}
     </aside>
   );
 }

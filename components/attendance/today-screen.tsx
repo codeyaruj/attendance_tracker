@@ -405,7 +405,7 @@ export function TodayScreen() {
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <Card className="bg-primary text-primary-foreground overflow-hidden">
           <div className="p-5 sm:p-6">
-            <p className="text-primary-foreground/75 text-xs font-bold tracking-[0.16em] uppercase">
+            <p className="text-primary-foreground/85 text-xs font-bold tracking-[0.16em] uppercase">
               {formattedDate}
             </p>
             <h2 className="font-display mt-2 text-2xl font-black tracking-tight sm:text-3xl">

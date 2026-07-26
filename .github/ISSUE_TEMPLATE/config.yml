@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/codeyaruj/attendance_tracker/security/advisories/new
+    about: Read SECURITY.md and report vulnerabilities privately without personal data.

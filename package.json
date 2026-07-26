@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@11.9.0",
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.13.0 <23"
   },
   "scripts": {
     "prepare:ocr-assets": "node scripts/copy-local-ocr-assets.mjs",
@@ -14,6 +14,7 @@
     "prebuild": "node scripts/copy-local-ocr-assets.mjs",
     "build": "next build",
     "start": "node scripts/serve-static.mjs out 3000",
+    "serve:static": "node scripts/serve-static.mjs out 4173",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
@@ -22,9 +23,21 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test --project=chromium --project=mobile-chromium",
+    "test:e2e:chromium": "playwright test --project=chromium",
+    "test:e2e:mobile": "playwright test --project=mobile-chromium",
     "test:e2e:responsive": "playwright test --grep @responsive --project=mobile-320 --project=mobile-375 --project=mobile-390 --project=mobile-412 --project=tablet",
-    "test:e2e:cross-browser": "playwright test --project=firefox --project=webkit",
+    "test:e2e:cross-browser": "playwright test --project=chromium --project=firefox --project=webkit",
+    "test:accessibility": "playwright test --project=chromium --grep @accessibility",
+    "test:installation": "playwright test --grep @installation --project=mobile-chromium --project=mobile-webkit",
     "test:pwa": "node scripts/copy-local-ocr-assets.mjs && NEXT_PUBLIC_SITE_URL=https://attendance.example.pages.dev next build && playwright test --config=playwright.pwa.config.ts",
+    "verify:static": "node scripts/verify-static-output.mjs",
+    "verify:security": "node scripts/security-regression-check.mjs",
+    "verify:assets": "node scripts/verify-asset-sizes.mjs",
+    "audit:dependencies": "node scripts/audit-dependencies.mjs",
+    "scan:secrets": "node scripts/scan-secrets.mjs --history",
+    "verify": "node scripts/run-verification.mjs verify",
+    "verify:release": "node scripts/run-verification.mjs release",
+    "ci": "node scripts/run-verification.mjs verify",
     "icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
@@ -46,6 +59,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "1.61.1",
     "@tailwindcss/postcss": "4.2.1",
     "@testing-library/jest-dom": "7.0.0",

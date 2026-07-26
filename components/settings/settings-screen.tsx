@@ -23,12 +23,14 @@ import {
 } from "./data-privacy-settings";
 import { ProfileSemesterSettings } from "./profile-semester-settings";
 import { ScheduleSettings } from "./schedule-settings";
+import { InstallApplicationSettings } from "./install-application-settings";
 
 const sections = [
   { href: "#profile-semester", label: "Profile", icon: UserRound },
   { href: "#attendance-policy", label: "Policy", icon: SlidersHorizontal },
   { href: "#schedule-rules", label: "Schedule", icon: CalendarClock },
   { href: "#preferences", label: "Appearance", icon: Palette },
+  { href: "#install-application", label: "Install", icon: HardDrive },
   { href: "#backup-privacy", label: "Backup", icon: DatabaseBackup },
 ] as const;
 
@@ -55,7 +57,7 @@ export function SettingsScreen() {
       <Card className="bg-primary text-primary-foreground overflow-hidden">
         <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div>
-            <p className="text-primary-foreground/75 text-xs font-bold tracking-[0.16em] uppercase">
+            <p className="text-primary-foreground/85 text-xs font-bold tracking-[0.16em] uppercase">
               Local-first control center
             </p>
             <h2 className="font-display mt-2 text-2xl font-black tracking-tight sm:text-3xl">
@@ -71,7 +73,7 @@ export function SettingsScreen() {
             <HardDrive className="size-6" aria-hidden="true" />
             <div>
               <p className="text-sm font-bold">Stored locally</p>
-              <p className="text-primary-foreground/70 text-xs">
+              <p className="text-primary-foreground text-xs">
                 {data.profiles.length} local{" "}
                 {data.profiles.length === 1 ? "profile" : "profiles"}
               </p>
@@ -103,6 +105,7 @@ export function SettingsScreen() {
         key={`preferences-${data.settings.updatedAt}`}
         data={data}
       />
+      <InstallApplicationSettings />
       <DataPrivacySettings key={`data-${settingsKey}`} data={data} />
     </div>
   );

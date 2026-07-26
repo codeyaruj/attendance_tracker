@@ -60,7 +60,11 @@ pnpm test:e2e:responsive
 pnpm test:e2e:cross-browser
 pnpm test:pwa
 pnpm build
+pnpm verify
+pnpm verify:release
 ```
+
+The supported toolchain is Node.js 22.18 (22.13 or newer, but below 23) and pnpm 11.9.0. `pnpm verify` is the deterministic local quality/build gate; `pnpm verify:release` also performs frozen installation, audits, browser E2E, responsive, and production PWA checks. See [TESTING.md](TESTING.md) for scope and [CONTRIBUTING.md](CONTRIBUTING.md) before changing schemas, backups, or cache versions.
 
 If Playwright has not downloaded Chromium on the machine yet:
 
@@ -204,6 +208,10 @@ Cloudflare Pages configuration:
 6. Deploy and verify route refreshes, installability, offline loading, OCR/PDF workers, and headers at the generated HTTPS address.
 
 No Cloudflare Worker, paid hosting plan, custom domain, or runtime environment variable is required. `NEXT_PUBLIC_SITE_URL` is build-time metadata only. If it is missing from a production build, AttendSafe omits the metadata base instead of embedding localhost.
+
+Use one permanent origin for real records. `localhost`, preview deployments, the permanent `pages.dev` hostname, a custom domain, different browsers, and different devices each have separate IndexedDB storage. Changing any of them does not migrate data; export a backup before moving.
+
+Repository and operational details are documented in [ARCHITECTURE.md](ARCHITECTURE.md), [SECURITY.md](SECURITY.md), and the [release checklist](docs/RELEASE_CHECKLIST.md).
 
 Architecture:
 

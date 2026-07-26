@@ -1,6 +1,8 @@
 packages:
   - "."
 
+storeDir: .pnpm-store
+
 overrides:
   esbuild: 0.28.1
   postcss: 8.5.22

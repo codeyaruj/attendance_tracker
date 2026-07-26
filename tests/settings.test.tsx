@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsConfirmDialog } from "@/components/settings/settings-confirm-dialog";
 import { SettingsScreen } from "@/components/settings/settings-screen";
 import { defaultAppSettings, type AttendSafeSnapshot } from "@/db";
+import { AppInstallProvider } from "@/hooks/use-app-install";
 import type { Profile, Semester } from "@/types/domain";
 
 const mockUseAttendSafeData = vi.hoisted(() => vi.fn());
@@ -72,7 +73,11 @@ beforeEach(() => {
 
 describe("SettingsScreen", () => {
   it("renders every production settings area from the active local snapshot", () => {
-    render(<SettingsScreen />);
+    render(
+      <AppInstallProvider>
+        <SettingsScreen />
+      </AppInstallProvider>,
+    );
 
     expect(screen.getByTestId("settings-page")).toBeInTheDocument();
     expect(
@@ -88,7 +93,10 @@ describe("SettingsScreen", () => {
       screen.getByRole("heading", { name: "App preferences" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Backup and privacy" }),
+      screen.getByRole("heading", { name: "Local data and backups" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Install application" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Display name" })).toHaveValue(
       "Asha",

@@ -103,7 +103,13 @@ export function Dialog({
       const stackIndex = openDialogStack.lastIndexOf(dialogId);
       if (stackIndex >= 0) openDialogStack.splice(stackIndex, 1);
       document.body.style.overflow = previousOverflow;
-      previouslyFocused?.focus();
+      // WebKit can ignore a synchronous focus call while the closing portal is
+      // still being removed. Restore focus after React commits the closed UI.
+      window.setTimeout(() => {
+        if (previouslyFocused?.isConnected) {
+          previouslyFocused.focus({ preventScroll: true });
+        }
+      });
     };
   }, [dialogId, open]);
 

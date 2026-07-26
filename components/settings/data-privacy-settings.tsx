@@ -314,10 +314,15 @@ export function DataPrivacySettings({ data }: { data: AttendSafeSnapshot }) {
       <SettingsSection
         id="backup-privacy"
         icon={DatabaseBackup}
-        title="Backup and privacy"
-        description="Your academic data stays in IndexedDB on this device. Export a portable backup before clearing browser storage."
+        title="Local data and backups"
+        description="Your timetable and attendance records are stored locally on this device. They are not uploaded to a server. Your data will not automatically appear on another phone, browser, or domain."
       >
         <DeviceStorageSettings offlineReady={data.settings.offlineReady} />
+        <p className="text-muted-foreground mb-4 text-sm leading-6">
+          Clearing site data, deleting application data, resetting the device,
+          or changing browsers may remove your records. Export a backup
+          regularly.
+        </p>
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="border-border rounded-2xl border p-4">
             <div className="flex items-center gap-3">
