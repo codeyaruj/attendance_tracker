@@ -14,6 +14,8 @@ Use strict TypeScript, existing components and repository operations, accessible
 
 Run the smallest relevant tests during development and `pnpm verify:release` for release candidates. See `TESTING.md` for isolation, coverage, browser, offline, and manual-accessibility expectations.
 
+pnpm 11 requires every dependency lifecycle script to be classified under `allowBuilds` in `pnpm-workspace.yaml`. `sharp` and `unrs-resolver` are allowed because their install steps prepare required binaries; `tesseract.js` is deliberately denied because its postinstall only displays an optional funding message and browser OCR uses the packaged worker, WASM, and language assets. Review every new lifecycle script before allowing it, then run `pnpm ignored-builds` after dependency changes.
+
 ## Durable format changes
 
 - **IndexedDB:** never edit a released schema in place. Increment `DATABASE_SCHEMA_VERSION`, append `version(n).stores(...)`, use a transactional upgrade, preserve optional legacy fields, and add migration/reopen/failure tests.

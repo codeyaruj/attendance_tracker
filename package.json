@@ -4,7 +4,8 @@
   "private": true,
   "packageManager": "pnpm@11.9.0",
   "engines": {
-    "node": ">=22.13.0 <23"
+    "node": ">=22.13.0 <23",
+    "pnpm": "11.9.0"
   },
   "scripts": {
     "prepare:ocr-assets": "node scripts/copy-local-ocr-assets.mjs",
@@ -32,6 +33,7 @@
     "test:pwa": "node scripts/copy-local-ocr-assets.mjs && NEXT_PUBLIC_SITE_URL=https://attendance.example.pages.dev next build && playwright test --config=playwright.pwa.config.ts",
     "verify:static": "node scripts/verify-static-output.mjs",
     "verify:security": "node scripts/security-regression-check.mjs",
+    "verify:build-policy": "node scripts/verify-pnpm-build-policy.mjs",
     "verify:assets": "node scripts/verify-asset-sizes.mjs",
     "audit:dependencies": "node scripts/audit-dependencies.mjs",
     "scan:secrets": "node scripts/scan-secrets.mjs --history",

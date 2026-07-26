@@ -17,6 +17,7 @@ const common = [
   ["build"],
   ["verify:static"],
   ["verify:security"],
+  ["verify:build-policy"],
   ["verify:assets"],
 ];
 const releaseOnly = [
