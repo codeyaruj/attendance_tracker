@@ -66,7 +66,7 @@ export function WeeklyGridBuilder({
   });
 
   return (
-    <div className="grid gap-3">
+    <div className="grid max-w-full min-w-0 gap-3 overflow-hidden">
       <WeeklyTimetableGrid
         entries={entries}
         days={DAYS_OF_WEEK}

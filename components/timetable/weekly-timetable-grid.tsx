@@ -63,7 +63,7 @@ export function WeeklyTimetableGrid({
   return (
     <section
       className={cn(
-        "border-border bg-surface max-w-full overflow-hidden rounded-2xl border",
+        "border-border bg-surface max-w-full min-w-0 overflow-hidden rounded-2xl border",
         className,
       )}
       aria-label={ariaLabel}
@@ -71,7 +71,7 @@ export function WeeklyTimetableGrid({
       data-testid="weekly-timetable-grid"
     >
       <div
-        className="scrollbar-none max-h-[70vh] overflow-auto overscroll-contain"
+        className="scrollbar-none max-h-[70vh] max-w-full overflow-auto overscroll-contain"
         tabIndex={0}
         data-testid="weekly-timetable-scroll"
       >

@@ -4,7 +4,6 @@ import { ArrowLeft, ArrowRight, Check, ImageIcon, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { formatClockTime } from "@/components/attendance/attendance-view-model";
 import { DraftEditor } from "@/components/timetable/draft-editor";
-import { WeeklyTimetableGrid } from "@/components/timetable/weekly-timetable-grid";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/form-controls";
@@ -16,10 +15,12 @@ import {
 import { cn } from "@/lib/utils";
 import type {
   ClassType,
+  DayOfWeek,
   DraftSlot,
   DraftSubject,
   NormalizedTimetableDraft,
 } from "@/types";
+import { DAYS_OF_WEEK } from "@/types";
 import type { ImageEdits } from "./upload-timetable";
 
 export type ConfirmationSelections = {
@@ -114,7 +115,7 @@ function Progress({ review }: { review: boolean }) {
   const activeIndex = review ? 2 : 1;
   return (
     <ol
-      className="grid grid-cols-3 gap-2"
+      className="grid max-w-full min-w-0 grid-cols-3 gap-2"
       aria-label="Timetable setup progress"
     >
       {steps.map((label, index) => (
@@ -140,60 +141,106 @@ function Progress({ review }: { review: boolean }) {
 
 function CompactSchedulePreview({
   draft,
+  selectedGroups,
+  onViewFullSchedule,
 }: {
   draft: NormalizedTimetableDraft;
+  selectedGroups: readonly string[];
+  onViewFullSchedule: () => void;
 }) {
   const slots = draft.timetableSlots.filter(
     (slot) => !slot.isBreak && !slot.isPlaceholder,
   );
-  const entries = slots.map((slot) => {
-    const subject = subjectFor(draft, slot);
-    return {
-      id: slot.temporaryId,
-      dayOfWeek: slot.dayOfWeek,
-      startTime: slot.startTime,
-      endTime: slot.endTime,
-      title: subject?.shortName || subject?.code || subject?.name || "Class",
-      subjectName: subject?.name,
-      qualifiers: slot.batchOptions,
-    };
-  });
+  const slotsByDay = new Map<DayOfWeek, DraftSlot[]>();
+  for (const day of DAYS_OF_WEEK) {
+    const daySlots = slots
+      .filter((slot) => slot.dayOfWeek === day)
+      .sort((left, right) =>
+        `${left.startTime}-${left.endTime}`.localeCompare(
+          `${right.startTime}-${right.endTime}`,
+        ),
+      );
+    if (daySlots.length) slotsByDay.set(day, daySlots);
+  }
+
+  const titleCaseDay = (day: DayOfWeek) => day[0] + day.slice(1).toLowerCase();
 
   return (
-    <div className="grid gap-3">
-      <div className="grid gap-2 lg:hidden" aria-label="Selected schedule">
-        {slots.map((slot) => (
-          <div
-            key={slot.temporaryId}
-            className="border-border bg-surface flex items-center justify-between gap-3 rounded-xl border p-3"
+    <section
+      className="grid min-w-0 gap-4"
+      aria-labelledby="compact-schedule-heading"
+      data-testid="compact-schedule-summary"
+    >
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 id="compact-schedule-heading" className="font-extrabold">
+            Your schedule
+          </h2>
+          <p className="text-muted-foreground mt-1 text-xs">
+            A quick summary of the classes you selected.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={onViewFullSchedule}>
+          View full schedule
+        </Button>
+      </div>
+
+      <dl className="grid min-w-0 gap-2 sm:grid-cols-3">
+        <div className="bg-secondary min-w-0 rounded-xl px-3 py-2.5">
+          <dt className="text-muted-foreground text-[11px] font-bold uppercase">
+            Selected
+          </dt>
+          <dd className="mt-0.5 text-sm font-extrabold" aria-live="polite">
+            {slots.length} {slots.length === 1 ? "class" : "classes"} selected
+          </dd>
+        </div>
+        <div className="bg-secondary min-w-0 rounded-xl px-3 py-2.5">
+          <dt className="text-muted-foreground text-[11px] font-bold uppercase">
+            Groups
+          </dt>
+          <dd className="mt-0.5 truncate text-sm font-extrabold">
+            {selectedGroups.length ? selectedGroups.join(", ") : "No groups"}
+          </dd>
+        </div>
+        <div className="bg-secondary min-w-0 rounded-xl px-3 py-2.5">
+          <dt className="text-muted-foreground text-[11px] font-bold uppercase">
+            Active days
+          </dt>
+          <dd className="mt-0.5 text-sm font-extrabold">{slotsByDay.size}</dd>
+        </div>
+      </dl>
+
+      <div className="grid min-w-0 gap-3" aria-label="Selected schedule by day">
+        {[...slotsByDay].map(([day, daySlots]) => (
+          <section
+            key={day}
+            className="border-border min-w-0 rounded-xl border p-3"
           >
-            <div className="min-w-0">
-              <p className="truncate text-sm font-bold">
-                {classLabel(draft, slot)}
+            <h3 className="text-sm font-extrabold">{titleCaseDay(day)}</h3>
+            <ol className="mt-1.5 grid gap-1.5">
+              {daySlots.slice(0, 3).map((slot) => (
+                <li
+                  key={slot.temporaryId}
+                  className="flex min-w-0 items-baseline gap-2 text-xs"
+                >
+                  <span className="text-muted-foreground shrink-0 tabular-nums">
+                    {formatClockTime(slot.startTime)}
+                  </span>
+                  <span className="truncate font-semibold">
+                    {classLabel(draft, slot)}
+                  </span>
+                </li>
+              ))}
+            </ol>
+            {daySlots.length > 3 ? (
+              <p className="text-primary mt-2 text-xs font-bold">
+                +{daySlots.length - 3} more
               </p>
-              <p className="text-muted-foreground mt-0.5 text-xs">
-                {slot.dayOfWeek[0] + slot.dayOfWeek.slice(1).toLowerCase()} ·{" "}
-                {formatClockTime(slot.startTime)}–
-                {formatClockTime(slot.endTime)}
-              </p>
-            </div>
-            {slot.batchOptions.length ? (
-              <span className="bg-primary-soft text-primary rounded-full px-2 py-1 text-[10px] font-bold">
-                {slot.batchOptions.join(" / ")}
-              </span>
             ) : null}
-          </div>
+          </section>
         ))}
       </div>
-      <div className="hidden lg:block">
-        <WeeklyTimetableGrid
-          entries={entries}
-          days={draft.days}
-          timeSlots={draft.timeSlots}
-          ariaLabel="Selected schedule preview"
-        />
-      </div>
-    </div>
+    </section>
   );
 }
 
@@ -383,41 +430,39 @@ export function TimetableConfirmation({
   };
 
   return (
-    <div className="mx-auto grid w-full max-w-7xl gap-5">
+    <div className="mx-auto grid w-full max-w-7xl min-w-0 gap-5">
       <Progress review={review} />
 
       {!review ? (
         <>
-          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-            <div>
-              <p className="text-primary text-xs font-bold tracking-[0.16em] uppercase">
-                Your classes
+          <div className="min-w-0">
+            <p className="text-primary text-xs font-bold tracking-[0.16em] uppercase">
+              Your classes
+            </p>
+            <h1 className="font-display mt-1 text-3xl font-extrabold tracking-tight sm:text-4xl">
+              Which classes belong to you?
+            </h1>
+            <p className="text-muted-foreground mt-2 text-sm leading-6">
+              Select your groups and remove anything that is not part of your
+              schedule.
+            </p>
+            {source?.extractionMessage
+              ?.toLocaleLowerCase()
+              .includes("ai-assisted") ? (
+              <p className="bg-info-soft text-info-strong mt-3 inline-flex rounded-full px-3 py-1.5 text-xs font-bold">
+                AI-assisted extraction. Check the classes below before
+                continuing.
               </p>
-              <h1 className="font-display mt-1 text-3xl font-extrabold tracking-tight sm:text-4xl">
-                Which classes belong to you?
-              </h1>
-              <p className="text-muted-foreground mt-2 text-sm leading-6">
-                Select your groups and remove anything that is not part of your
-                schedule.
-              </p>
-              {source?.extractionMessage
-                ?.toLocaleLowerCase()
-                .includes("ai-assisted") ? (
-                <p className="bg-info-soft text-info-strong mt-3 inline-flex rounded-full px-3 py-1.5 text-xs font-bold">
-                  AI-assisted extraction. Check the classes below before
-                  continuing.
-                </p>
-              ) : null}
-            </div>
-            <Button variant="ghost" onClick={onBack}>
-              Back
-            </Button>
+            ) : null}
           </div>
 
-          <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-            <div className="grid content-start gap-5">
+          <div className="grid min-w-0 gap-5 pb-[calc(7rem+env(safe-area-inset-bottom))] xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.1fr)]">
+            <div
+              className="grid min-w-0 content-start gap-5"
+              data-testid="class-selection-list"
+            >
               {commonSubjects.length ? (
-                <Card className="p-4 sm:p-5">
+                <Card className="min-w-0 p-4 sm:p-5">
                   <h2 className="font-extrabold">Common classes</h2>
                   <p className="text-muted-foreground mt-1 text-xs">
                     These apply to everyone and start selected.
@@ -430,8 +475,9 @@ export function TimetableConfirmation({
                       return (
                         <label
                           key={subject.temporaryId}
+                          data-testid="class-selection-item"
                           className={cn(
-                            "border-border flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border p-3 font-semibold transition",
+                            "border-border flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 font-semibold transition",
                             checked && "border-primary bg-primary-soft",
                           )}
                         >
@@ -461,7 +507,7 @@ export function TimetableConfirmation({
               ) : null}
 
               {groupedOptions.length ? (
-                <Card className="p-4 sm:p-5">
+                <Card className="min-w-0 p-4 sm:p-5">
                   <h2 className="font-extrabold">
                     Choose your lab or tutorial groups
                   </h2>
@@ -483,7 +529,7 @@ export function TimetableConfirmation({
                               <label
                                 key={option}
                                 className={cn(
-                                  "border-border flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border p-3 text-sm font-bold",
+                                  "border-border flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold",
                                   checked &&
                                     "border-primary bg-primary-soft text-primary",
                                 )}
@@ -544,7 +590,7 @@ export function TimetableConfirmation({
               ) : null}
 
               {uncertainSlots.length ? (
-                <Card className="p-4 sm:p-5">
+                <Card className="min-w-0 p-4 sm:p-5">
                   <h2 className="font-extrabold">Check these classes</h2>
                   <p className="text-muted-foreground mt-1 text-xs">
                     We were not completely sure about these classes.
@@ -557,8 +603,9 @@ export function TimetableConfirmation({
                       return (
                         <label
                           key={slot.temporaryId}
+                          data-testid="class-selection-item"
                           className={cn(
-                            "border-border flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border p-3",
+                            "border-border flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2",
                             checked && "border-primary bg-primary-soft",
                           )}
                         >
@@ -612,31 +659,25 @@ export function TimetableConfirmation({
               ) : null}
             </div>
 
-            <Card className="min-w-0 p-4 sm:p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="font-extrabold">Your schedule</h2>
-                  <p
-                    className="text-primary mt-1 text-sm font-bold"
-                    aria-live="polite"
-                  >
-                    {selectedClassCount} classes selected
-                  </p>
+            <Card className="min-w-0 self-start p-4 sm:p-5">
+              {selectedClassCount ? (
+                <CompactSchedulePreview
+                  draft={previewDraft}
+                  selectedGroups={selectedGroups}
+                  onViewFullSchedule={enterReview}
+                />
+              ) : (
+                <div className="border-border text-muted-foreground rounded-xl border border-dashed p-8 text-center text-sm">
+                  Select at least one class to continue.
                 </div>
-              </div>
-              <div className="mt-4">
-                {selectedClassCount ? (
-                  <CompactSchedulePreview draft={previewDraft} />
-                ) : (
-                  <div className="border-border text-muted-foreground rounded-xl border border-dashed p-8 text-center text-sm">
-                    Select at least one class to continue.
-                  </div>
-                )}
-              </div>
+              )}
             </Card>
           </div>
 
-          <div className="border-border bg-background/95 sticky bottom-0 z-20 -mx-4 flex flex-col-reverse gap-2 border-t px-4 py-3 backdrop-blur sm:mx-0 sm:flex-row sm:items-center sm:justify-between sm:rounded-2xl sm:border">
+          <div
+            className="border-border bg-background/95 sticky bottom-0 z-20 flex w-full min-w-0 flex-col-reverse gap-2 rounded-2xl border px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:flex-row sm:items-center sm:justify-between"
+            data-testid="timetable-confirmation-actions"
+          >
             <Button variant="ghost" onClick={onBack}>
               <ArrowLeft className="size-4" /> Back
             </Button>
@@ -651,7 +692,7 @@ export function TimetableConfirmation({
         </>
       ) : (
         <>
-          <div>
+          <div className="min-w-0">
             <p className="text-primary text-xs font-bold tracking-[0.16em] uppercase">
               Review
             </p>
@@ -693,20 +734,25 @@ export function TimetableConfirmation({
             </details>
           ) : null}
 
-          <Card className="min-w-0 p-3 sm:p-5">
-            <DraftEditor
-              value={reviewDraft}
-              onChange={(next) => {
-                setReviewDraft(next);
-                onChange(next);
-              }}
-              compact
-              fixedView="GRID"
-              simple
-            />
+          <Card className="mb-[calc(7rem+env(safe-area-inset-bottom))] min-w-0 overflow-hidden p-3 sm:p-5">
+            <div className="max-w-full min-w-0 overflow-hidden">
+              <DraftEditor
+                value={reviewDraft}
+                onChange={(next) => {
+                  setReviewDraft(next);
+                  onChange(next);
+                }}
+                compact
+                fixedView="GRID"
+                simple
+              />
+            </div>
           </Card>
 
-          <div className="border-border bg-background/95 sticky bottom-0 z-20 -mx-4 flex flex-col-reverse gap-2 border-t px-4 py-3 backdrop-blur sm:mx-0 sm:flex-row sm:items-center sm:justify-between sm:rounded-2xl sm:border">
+          <div
+            className="border-border bg-background/95 sticky bottom-0 z-20 flex w-full min-w-0 flex-col-reverse gap-2 rounded-2xl border px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:flex-row sm:items-center sm:justify-between"
+            data-testid="timetable-confirmation-actions"
+          >
             <Button variant="ghost" onClick={backToSelection} disabled={saving}>
               <ArrowLeft className="size-4" /> Back to class selection
             </Button>

@@ -126,6 +126,69 @@ async function advanceTimetableConfirmation(page: Page): Promise<void> {
   await expect(page.getByTestId("confirm-timetable")).toBeVisible();
 }
 
+async function openWideTimetableSelection(page: Page): Promise<void> {
+  await page.getByTestId("choose-manual").click();
+  await completeProfileSetup(page, "Responsive Layout Student");
+  await page.getByRole("button", { name: "Paste timetable" }).click();
+  const pasteDialog = page.getByRole("dialog", {
+    name: "Paste timetable text",
+  });
+  await pasteDialog
+    .getByRole("textbox")
+    .fill(
+      [
+        "Monday 07:00-08:00 SUB701 Applied Mathematics",
+        "Tuesday 08:00-09:00 SUB702 Applied Physics",
+        "Wednesday 09:00-10:00 SUB703 Programming Fundamentals",
+        "Thursday 10:00-11:00 SUB704 Circuit Theory",
+        "Friday 11:00-12:00 SUB705 Professional Ethics",
+        "Monday 12:00-13:00 SUB706 Digital Electronics",
+        "Tuesday 13:00-14:00 SUB707 Signal Processing",
+        "Wednesday 14:00-15:00 SUB708 Control Systems",
+        "Thursday 15:00-16:00 SUB709 Communication Systems",
+        "Friday 16:00-17:00 SUB710 Embedded Systems",
+        "Monday 17:00-18:00 SUB711 Computer Networks",
+        "Tuesday 18:00-19:00 SUB712 Engineering Design",
+      ].join("\n"),
+    );
+  await pasteDialog.getByRole("button", { name: "Parse & review" }).click();
+  await expect(page.getByText(/12 classes parsed/)).toBeVisible();
+  await page.getByTestId("review-manual-timetable").click();
+  await expect(
+    page.getByRole("heading", { name: "Which classes belong to you?" }),
+  ).toBeVisible();
+}
+
+async function expectNoDocumentHorizontalOverflow(
+  page: Page,
+  context: string,
+): Promise<void> {
+  const overflow = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    offenders: Array.from(document.querySelectorAll<HTMLElement>("*"))
+      .map((element) => {
+        const rectangle = element.getBoundingClientRect();
+        return {
+          tag: element.tagName,
+          classes: element.className,
+          left: Math.round(rectangle.left),
+          right: Math.round(rectangle.right),
+        };
+      })
+      .filter(
+        (item) =>
+          item.left < -1 ||
+          item.right > document.documentElement.clientWidth + 1,
+      )
+      .slice(0, 8),
+  }));
+  expect(
+    overflow.scrollWidth,
+    `${context} overflow diagnostics: ${JSON.stringify(overflow)}`,
+  ).toBeLessThanOrEqual(overflow.clientWidth + 1);
+}
+
 async function scrollControlIntoSafeView(control: Locator): Promise<void> {
   await control.evaluate((element) => {
     element.scrollIntoView({
@@ -849,22 +912,7 @@ test("@responsive primary pages fit narrow viewports and expose touch-friendly c
   for (const route of routes) {
     await page.goto(route);
     await expect(page.locator("main")).toBeVisible();
-    const overflow = await page.evaluate(() => ({
-      viewport: window.innerWidth,
-      documentWidth: document.documentElement.scrollWidth,
-      offenders: Array.from(document.querySelectorAll<HTMLElement>("*"))
-        .map((element) => ({
-          tag: element.tagName,
-          classes: element.className,
-          right: Math.round(element.getBoundingClientRect().right),
-        }))
-        .filter((item) => item.right > window.innerWidth + 1)
-        .slice(0, 8),
-    }));
-    expect(
-      overflow.documentWidth,
-      `${route} overflow diagnostics: ${JSON.stringify(overflow)}`,
-    ).toBeLessThanOrEqual(overflow.viewport);
+    await expectNoDocumentHorizontalOverflow(page, route);
   }
 
   await page.goto("/today/");
@@ -935,6 +983,75 @@ test("@responsive primary pages fit narrow viewports and expose touch-friendly c
   await expect(
     page.getByRole("button", { name: "Protect local data" }),
   ).toBeVisible();
+});
+
+test("onboarding selection and review contain wide schedules at supported viewport sizes", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium",
+    "The viewport matrix runs once with Chromium.",
+  );
+  const viewportSizes = [
+    { width: 390, height: 844 },
+    { width: 768, height: 1024 },
+    { width: 1280, height: 800 },
+    { width: 1440, height: 900 },
+    { width: 1536, height: 1024 },
+  ];
+
+  for (const viewport of viewportSizes) {
+    await page.setViewportSize(viewport);
+    await resetLocalData(page);
+    await openWideTimetableSelection(page);
+    const context = `${viewport.width}x${viewport.height}`;
+
+    await expectNoDocumentHorizontalOverflow(page, `${context} selection`);
+    await expect(page.getByTestId("compact-schedule-summary")).toBeVisible();
+    await expect(page.getByTestId("weekly-timetable-grid")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Back", exact: true }),
+    ).toHaveCount(1);
+
+    const selectionItems = page.getByTestId("class-selection-item");
+    const selectionItemCount = await selectionItems.count();
+    expect(selectionItemCount).toBeGreaterThan(0);
+    const finalSelectionItem = selectionItems.nth(selectionItemCount - 1);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    const actionBar = page.getByTestId("timetable-confirmation-actions");
+    const [finalItemBounds, actionBarBounds] = await Promise.all([
+      finalSelectionItem.boundingBox(),
+      actionBar.boundingBox(),
+    ]);
+    expect(finalItemBounds).not.toBeNull();
+    expect(actionBarBounds).not.toBeNull();
+    expect(finalItemBounds!.y + finalItemBounds!.height).toBeLessThanOrEqual(
+      actionBarBounds!.y + 1,
+    );
+
+    const reviewButton = page.getByRole("button", {
+      name: "Review schedule",
+    });
+    await scrollControlIntoSafeView(reviewButton);
+    await expectLocatorReceivesPointerEvents(reviewButton);
+    const fullScheduleButton = page.getByRole("button", {
+      name: "View full schedule",
+    });
+    await scrollControlIntoSafeView(fullScheduleButton);
+    await expectLocatorReceivesPointerEvents(fullScheduleButton);
+    await fullScheduleButton.click();
+
+    await expect(page.getByTestId("compact-schedule-summary")).toHaveCount(0);
+    await expect(page.getByTestId("weekly-timetable-grid")).toBeVisible();
+    await expectNoDocumentHorizontalOverflow(page, `${context} review`);
+    const weeklyScroll = page.getByTestId("weekly-timetable-scroll");
+    expect(
+      await weeklyScroll.evaluate(
+        (element) => element.scrollWidth > element.clientWidth,
+      ),
+      `${context} review grid should scroll internally`,
+    ).toBe(true);
+  }
 });
 
 test("@responsive timetable upload offers camera and existing-file choices", async ({

@@ -215,6 +215,44 @@ describe("simplified timetable confirmation", () => {
     ).toBeVisible();
   });
 
+  it("uses a compact selection summary and reserves the full grid for review", () => {
+    const draft = confirmationDraft();
+    draft.timeSlots = [
+      { startTime: "09:00", endTime: "10:00" },
+      { startTime: "10:00", endTime: "11:00" },
+      { startTime: "11:00", endTime: "12:00" },
+      { startTime: "12:00", endTime: "13:00" },
+    ];
+    const sourceSlot = draft.timetableSlots[0]!;
+    draft.timetableSlots.push(
+      ...draft.timeSlots.slice(1).map((timeSlot, index) => ({
+        ...sourceSlot,
+        temporaryId: `core-slot-${index + 2}`,
+        ...timeSlot,
+      })),
+    );
+
+    render(<ConfirmationHarness initial={draft} />);
+
+    const summary = screen.getByTestId("compact-schedule-summary");
+    expect(within(summary).getByText("6 classes selected")).toBeVisible();
+    expect(within(summary).getByText("2")).toBeVisible();
+    expect(within(summary).getByText("+1 more")).toBeVisible();
+    expect(
+      screen.queryByTestId("weekly-timetable-grid"),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Back" })).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "B1" }));
+    expect(within(summary).getByText("B1")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "View full schedule" }));
+
+    expect(
+      screen.queryByTestId("compact-schedule-summary"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("weekly-timetable-grid")).toBeVisible();
+  });
+
   it("loads legacy singular batch choices while preferring new arrays", () => {
     expect(
       resolvedOnboardingBatch({ batchDecision: "NONE" }, "B1"),
