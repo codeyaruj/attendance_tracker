@@ -25,6 +25,22 @@ test("AI fallback requires consent and opens the existing editable review", asyn
     const request = route.request();
     expect(request.method()).toBe("POST");
     expect(request.headers()["content-type"]).toContain("multipart/form-data");
+    if (requests === 1) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        headers: { "Cache-Control": "no-store", "Retry-After": "5" },
+        body: JSON.stringify({
+          ok: false,
+          error: {
+            code: "AI_PROVIDER_UNAVAILABLE",
+            message: "AI schedule analysis is temporarily unavailable.",
+            retryable: true,
+          },
+        }),
+      });
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -106,11 +122,26 @@ test("AI fallback requires consent and opens the existing editable review", asyn
   await page.getByRole("button", { name: "Continue with AI" }).click();
   await expect(
     page.getByText(
+      "Gemini is temporarily busy. Please wait a moment and try again.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Try AI again" }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Enter timetable manually" }),
+  ).toBeEnabled();
+  expect(requests).toBe(1);
+
+  await page.getByRole("button", { name: "Try AI again" }).click();
+  await page.getByRole("button", { name: "Continue with AI" }).click();
+  await expect(
+    page.getByText(
       "AI-assisted extraction. Check the classes below before continuing.",
       { exact: true },
     ),
   ).toBeVisible();
-  expect(requests).toBe(1);
+  expect(requests).toBe(2);
 
   await page.getByRole("button", { name: "Review schedule" }).click();
   await expect(page.getByText("AI Extracted Class").first()).toBeVisible();

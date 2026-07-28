@@ -10,11 +10,16 @@ import {
   AiTimetableValidationError,
   validateAndNormaliseAiTimetable,
 } from "../../../lib/ai-timetable/validation";
-import { analyseWithGemini, selectedGeminiModel } from "./gemini";
+import {
+  GeminiProviderError,
+  analyseWithGemini,
+  selectedGeminiModel,
+} from "./gemini";
 
 interface Env {
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
+  GEMINI_FALLBACK_MODEL?: string;
 }
 
 interface PagesContext {
@@ -25,8 +30,11 @@ interface PagesContext {
 export type TimetableAiProvider = (input: {
   apiKey: string;
   model?: string;
+  fallbackModel?: string;
   image: File;
   hints?: LocalExtractionHints;
+  signal?: AbortSignal;
+  requestId?: string;
 }) => Promise<AiTimetable>;
 
 const headers = {
@@ -34,10 +42,33 @@ const headers = {
   "Content-Type": "application/json",
 };
 
-function failure(code: AiErrorCode, message: string, status: number): Response {
+function failure(
+  code: AiErrorCode,
+  message: string,
+  status: number,
+  options: {
+    retryable?: boolean;
+    retryAfter?: number;
+    requestId?: string;
+  } = {},
+): Response {
+  const responseHeaders = new Headers(headers);
+  if (options.retryAfter !== undefined) {
+    responseHeaders.set("Retry-After", String(options.retryAfter));
+  }
+  if (options.requestId) responseHeaders.set("X-Request-ID", options.requestId);
   return Response.json(
-    { ok: false, error: { code, message } },
-    { status, headers },
+    {
+      ok: false,
+      error: {
+        code,
+        message,
+        ...(options.retryable !== undefined
+          ? { retryable: options.retryable }
+          : {}),
+      },
+    },
+    { status, headers: responseHeaders },
   );
 }
 
@@ -45,6 +76,10 @@ interface ProviderErrorDetails {
   name?: string;
   status?: number;
   code?: string;
+  retryable?: boolean;
+  attempts?: number;
+  fallbackUsed?: boolean;
+  deadlineExceeded?: boolean;
   message: string;
 }
 
@@ -76,6 +111,7 @@ export function providerErrorDetails(cause: unknown): ProviderErrorDetails {
   ];
   const status = statusCandidates.map(httpStatus).find(Boolean);
   const rawCode =
+    nestedValue(cause, "providerStatus") ??
     nestedValue(cause, "error", "code") ??
     nestedValue(cause, "code") ??
     nestedValue(cause, "error", "status");
@@ -94,6 +130,22 @@ export function providerErrorDetails(cause: unknown): ProviderErrorDetails {
         : undefined,
     status,
     code,
+    retryable:
+      typeof nestedValue(cause, "retryable") === "boolean"
+        ? Boolean(nestedValue(cause, "retryable"))
+        : undefined,
+    attempts:
+      typeof nestedValue(cause, "attempts") === "number"
+        ? Number(nestedValue(cause, "attempts"))
+        : undefined,
+    fallbackUsed:
+      typeof nestedValue(cause, "fallbackUsed") === "boolean"
+        ? Boolean(nestedValue(cause, "fallbackUsed"))
+        : undefined,
+    deadlineExceeded:
+      typeof nestedValue(cause, "deadlineExceeded") === "boolean"
+        ? Boolean(nestedValue(cause, "deadlineExceeded"))
+        : undefined,
     message: String(rawMessage),
   };
 }
@@ -141,6 +193,7 @@ function localDiagnosticSecrets(input: {
 
 function logLocalProviderFailure(input: {
   request: Request;
+  requestId: string;
   model: string;
   elapsedMs: number;
   cause: unknown;
@@ -150,20 +203,28 @@ function logLocalProviderFailure(input: {
   const details = providerErrorDetails(input.cause);
   console.error("[ai-timetable] Gemini request failed", {
     model: input.model,
+    requestId: input.requestId,
     elapsedMs: input.elapsedMs,
     name: details.name,
     status: details.status,
     code: details.code,
+    retryable: details.retryable,
+    attempts: details.attempts,
+    fallbackUsed: details.fallbackUsed,
     message: diagnosticMessage(details.message, input.sensitiveValues),
   });
 }
 
-function safeProviderError(cause: unknown): Response {
+function safeProviderError(cause: unknown, requestId: string): Response {
   if (cause instanceof AiTimetableValidationError) {
-    return failure(cause.code, cause.message, 422);
+    return failure(cause.code, cause.message, 422, {
+      retryable: false,
+      requestId,
+    });
   }
   const details = providerErrorDetails(cause);
   if (
+    details.deadlineExceeded ||
     details.name === "AbortError" ||
     details.name === "TimeoutError" ||
     details.status === 504 ||
@@ -173,6 +234,7 @@ function safeProviderError(cause: unknown): Response {
       "AI_TIMEOUT",
       "AI schedule analysis timed out. Try again later.",
       504,
+      { retryable: true, requestId },
     );
   }
   if (details.status === 429 || details.code === "RESOURCE_EXHAUSTED") {
@@ -180,6 +242,19 @@ function safeProviderError(cause: unknown): Response {
       "AI_RATE_LIMITED",
       "AI schedule analysis is busy. Try again later.",
       429,
+      { retryable: true, retryAfter: 5, requestId },
+    );
+  }
+  if (
+    details.status === 503 ||
+    details.code === "UNAVAILABLE" ||
+    (cause instanceof GeminiProviderError && details.retryable)
+  ) {
+    return failure(
+      "AI_PROVIDER_UNAVAILABLE",
+      "AI schedule analysis is temporarily unavailable.",
+      503,
+      { retryable: true, retryAfter: 5, requestId },
     );
   }
   if (details.status === 400 || details.code === "INVALID_ARGUMENT") {
@@ -187,6 +262,7 @@ function safeProviderError(cause: unknown): Response {
       "AI_INVALID_RESPONSE",
       "The AI request was rejected. Try another image or enter the timetable manually.",
       422,
+      { retryable: false, requestId },
     );
   }
   if (details.status === 401 || details.status === 403) {
@@ -194,6 +270,7 @@ function safeProviderError(cause: unknown): Response {
       "AI_PROVIDER_ERROR",
       "AI schedule analysis is unavailable because its server configuration was rejected.",
       502,
+      { retryable: false, requestId },
     );
   }
   if (details.status === 404) {
@@ -201,18 +278,21 @@ function safeProviderError(cause: unknown): Response {
       "AI_PROVIDER_ERROR",
       "The configured AI model is currently unavailable.",
       502,
+      { retryable: false, requestId },
     );
   }
   return failure(
     "AI_PROVIDER_ERROR",
     "AI schedule analysis is temporarily unavailable.",
     502,
+    { retryable: false, requestId },
   );
 }
 
 export function createTimetableAnalysisHandler(provider: TimetableAiProvider) {
   return async (context: PagesContext): Promise<Response> => {
     const { request } = context;
+    const requestId = crypto.randomUUID();
     if (request.method !== "POST") {
       const response = failure(
         "METHOD_NOT_ALLOWED",
@@ -339,14 +419,18 @@ export function createTimetableAnalysisHandler(provider: TimetableAiProvider) {
         await provider({
           apiKey: context.env.GEMINI_API_KEY,
           model,
+          fallbackModel: context.env.GEMINI_FALLBACK_MODEL,
           image: file,
           hints,
+          signal: request.signal,
+          requestId,
         }),
       );
       return Response.json({ ok: true, data }, { status: 200, headers });
     } catch (cause) {
       logLocalProviderFailure({
         request,
+        requestId,
         model,
         elapsedMs: Date.now() - startedAt,
         cause,
@@ -357,7 +441,7 @@ export function createTimetableAnalysisHandler(provider: TimetableAiProvider) {
           hints,
         }),
       });
-      return safeProviderError(cause);
+      return safeProviderError(cause, requestId);
     }
   };
 }

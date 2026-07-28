@@ -99,24 +99,30 @@ Create an ignored `.dev.vars` file in the repository root for local Pages develo
 ```text
 GEMINI_API_KEY=PASTE_THE_REAL_KEY_HERE
 GEMINI_MODEL=gemini-3.5-flash
+GEMINI_FALLBACK_MODEL=
 ```
 
-`GEMINI_MODEL` is optional; the server defaults to `gemini-3.5-flash`. Run the static app and Pages Function together with:
+`GEMINI_MODEL` is optional; the server defaults to `gemini-3.5-flash`. `GEMINI_FALLBACK_MODEL` is also optional and is never chosen unless it is explicitly configured with a different model name. Run the static app and Pages Function together with:
 
 ```bash
 pnpm dev:pages
 ```
 
-Ordinary `pnpm dev` serves the Next.js client but does not execute the root Pages Function. Automated tests inject or route mocked provider responses and never contact Google. Function error codes include `AI_NOT_CONFIGURED`, `AI_RATE_LIMITED`, `AI_TIMEOUT`, `AI_PROVIDER_ERROR`, `AI_INVALID_RESPONSE`, `IMAGE_TOO_LARGE`, and `NO_TIMETABLE_DETECTED`.
+Ordinary `pnpm dev` serves the Next.js client but does not execute the root Pages Function. Automated tests inject or route mocked provider responses and never contact Google. Function error codes include `AI_NOT_CONFIGURED`, `AI_RATE_LIMITED`, `AI_TIMEOUT`, `AI_PROVIDER_ERROR`, `AI_PROVIDER_UNAVAILABLE`, `AI_INVALID_RESPONSE`, `IMAGE_TOO_LARGE`, and `NO_TIMETABLE_DETECTED`.
+
+Transient Gemini capacity and network failures are retried only inside the Function. The primary model receives at most three attempts with short exponential backoff and jitter. If those attempts remain transiently unavailable, one explicitly configured fallback-model attempt is allowed. The strict total cap is four provider calls, and every attempt and delay shares the existing 10-minute overall deadline. The browser never automatically resubmits an image; after an exhausted retryable failure, the student chooses whether to try AI again or continue manually.
 
 Common fallback errors:
 
 - `AI_NOT_CONFIGURED`: add `GEMINI_API_KEY` to `.dev.vars`, or add it as an encrypted Cloudflare Pages secret for the relevant Production/Preview environment and redeploy.
 - `AI_RATE_LIMITED`: inspect Gemini usage and Cloudflare request volume, then wait or adjust the applicable quota/protection.
-- `AI_TIMEOUT` or `AI_PROVIDER_ERROR`: check the Pages Function logs and provider status, then retry manually; AttendSafe never retries automatically.
+- `AI_PROVIDER_UNAVAILABLE`: the bounded server retries were exhausted because Gemini remained temporarily unavailable. Wait briefly and retry manually; the response includes `Retry-After` guidance.
+- `AI_TIMEOUT` or `AI_PROVIDER_ERROR`: check the Pages Function logs and provider status, then retry manually. AttendSafe does not automatically make another browser request.
 - `AI_INVALID_RESPONSE`: the provider returned data that failed the shared schema or logical validation; retry or use manual entry.
 - `IMAGE_TOO_LARGE`: choose a JPEG, PNG, or WebP image no larger than 8 MiB.
 - `NO_TIMETABLE_DETECTED`: use a clearer crop/image or enter the schedule manually.
+
+An optional live-provider smoke test is disabled by default and is not part of pull-request verification. Export a Gemini key and explicitly enable it with `RUN_LIVE_GEMINI_SMOKE=1 pnpm test:gemini-live`. It sends only a generated synthetic timetable, uses the production retry policy with a strict 60-second deadline, validates the structured result, and reports exhausted temporary provider capacity as inconclusive rather than an application regression. It never prints secrets or the provider response.
 
 `pnpm install`, `pnpm dev`, and `pnpm build` prepare self-hosted worker assets under `public/ocr-assets/`. The generated assets are approximately 17 MB: about 12 MB of Tesseract core variants, a 2.8 MB compressed English model, a 2.1 MB PDF.js worker, and a 128 KB Tesseract worker. They are fetched from the same application origin and cached only when extraction first needs them. No OpenCV dependency was added: structural vision is compiled application code using Canvas and typed arrays. The first timetable scan therefore requires internet access; later scans can work offline after every required OCR/PDF asset has downloaded successfully.
 
@@ -236,7 +242,7 @@ Cloudflare Pages configuration:
 3. Set the build command to `pnpm build`.
 4. Set the output directory to `out`.
 5. Set `NEXT_PUBLIC_SITE_URL` to the project's public HTTPS URL, including a generated `pages.dev` URL when no custom domain is used.
-6. Add the encrypted `GEMINI_API_KEY` secret to Production (and separately to Preview if desired). Optionally set the non-secret `GEMINI_MODEL` variable.
+6. Add the encrypted `GEMINI_API_KEY` secret to Production (and separately to Preview if desired). Optionally set the non-secret `GEMINI_MODEL` and `GEMINI_FALLBACK_MODEL` variables.
 7. Deploy and verify route refreshes, `/api/timetable/analyse`, installability, offline loading, OCR/PDF workers, and headers at the generated HTTPS address.
 
 The application remains usable without the optional Gemini secret; the Function returns `AI_NOT_CONFIGURED` while every local feature continues working. `NEXT_PUBLIC_SITE_URL` is build-time metadata only. If it is missing from a production build, AttendSafe omits the metadata base instead of embedding localhost.

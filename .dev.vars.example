@@ -1,2 +1,4 @@
 GEMINI_API_KEY=replace_with_your_local_key
 GEMINI_MODEL=gemini-3.5-flash
+# Optional: used only after transient failures exhaust the primary model retries.
+GEMINI_FALLBACK_MODEL=

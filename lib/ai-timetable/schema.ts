@@ -24,6 +24,7 @@ export const aiErrorCodeSchema = z.enum([
   "AI_RATE_LIMITED",
   "AI_TIMEOUT",
   "AI_PROVIDER_ERROR",
+  "AI_PROVIDER_UNAVAILABLE",
   "AI_INVALID_RESPONSE",
   "NO_TIMETABLE_DETECTED",
 ]);
@@ -156,7 +157,11 @@ export const aiFailureResponseSchema = z
   .object({
     ok: z.literal(false),
     error: z
-      .object({ code: aiErrorCodeSchema, message: z.string().min(1).max(500) })
+      .object({
+        code: aiErrorCodeSchema,
+        message: z.string().min(1).max(500),
+        retryable: z.boolean().optional(),
+      })
       .strict(),
   })
   .strict();

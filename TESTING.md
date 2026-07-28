@@ -9,6 +9,7 @@
 - `pnpm test:e2e:cross-browser`: Chromium, Firefox, and WebKit core flows.
 - `pnpm test:accessibility`: Axe checks plus existing keyboard/dialog assertions. Manual screen-reader, zoom, motion, touch, and real-device contrast checks remain required.
 - `pnpm test:pwa`: a production static build, real service worker, offline shell/data writes, cache isolation, retention, backup, manifest, icon, and header checks.
+- `RUN_LIVE_GEMINI_SMOKE=1 pnpm test:gemini-live`: optional, non-blocking live-provider smoke using only a generated synthetic timetable. It runs only when both the flag and `GEMINI_API_KEY` are present and is never part of mandatory pull-request verification.
 
 `pnpm verify` runs formatting, lint, type checking, unit tests, coverage, static build, output validation, security regression checks, and asset budgets. `pnpm verify:release` adds frozen installation, dependency/secret scans, all Playwright projects, responsive checks, and production PWA tests.
 

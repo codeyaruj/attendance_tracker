@@ -12,6 +12,82 @@ import {
 
 export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash";
 
+export const GEMINI_RETRY_POLICY = {
+  maximumPrimaryAttempts: 3,
+  maximumFallbackAttempts: 1,
+  maximumTotalAttempts: 4,
+  retryDelaysMs: [400, 1_000],
+  maximumJitterMs: 100,
+  minimumAttemptBudgetMs: 1_500,
+} as const;
+
+interface GeminiAttemptInput {
+  model: string;
+  signal: AbortSignal;
+}
+
+interface GeminiAttemptResult {
+  text?: string;
+}
+
+interface GeminiRetryLogger {
+  info(message: string, details: Record<string, unknown>): void;
+  warn(message: string, details: Record<string, unknown>): void;
+  error(message: string, details: Record<string, unknown>): void;
+}
+
+export interface GeminiRuntimeOptions {
+  generateContent?: (input: GeminiAttemptInput) => Promise<GeminiAttemptResult>;
+  sleep?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
+  now?: () => number;
+  random?: () => number;
+  deadlineMs?: number;
+  logger?: GeminiRetryLogger;
+}
+
+interface GeminiFailureDetails {
+  status?: number;
+  providerStatus?: string;
+  retryable: boolean;
+}
+
+export class GeminiProviderError extends Error {
+  readonly status?: number;
+  readonly providerStatus?: string;
+  readonly retryable: boolean;
+  readonly attempts: number;
+  readonly model: string;
+  readonly fallbackUsed: boolean;
+  readonly deadlineExceeded: boolean;
+
+  constructor(input: {
+    status?: number;
+    providerStatus?: string;
+    retryable: boolean;
+    attempts: number;
+    model: string;
+    fallbackUsed: boolean;
+    deadlineExceeded?: boolean;
+    cause: unknown;
+  }) {
+    const status = input.status ? ` HTTP ${input.status}` : "";
+    const providerStatus = input.providerStatus
+      ? ` ${input.providerStatus}`
+      : "";
+    super(`Gemini request failed${status}${providerStatus}.`, {
+      cause: input.cause,
+    });
+    this.name = "GeminiProviderError";
+    this.status = input.status;
+    this.providerStatus = input.providerStatus;
+    this.retryable = input.retryable;
+    this.attempts = input.attempts;
+    this.model = input.model;
+    this.fallbackUsed = input.fallbackUsed;
+    this.deadlineExceeded = input.deadlineExceeded ?? false;
+  }
+}
+
 const nullableString = (description: string) => ({
   type: ["string", "null"],
   description,
@@ -148,49 +224,365 @@ export function parseGeminiTimetableResponse(
   return geminiResponseToAiTimetable(parsed);
 }
 
-export async function analyseWithGemini(input: {
-  apiKey: string;
-  model?: string;
-  image: File;
-  hints?: LocalExtractionHints;
-}): Promise<AiTimetable> {
+function nestedValue(value: unknown, ...path: string[]): unknown {
+  let current = value;
+  for (const key of path) {
+    if (typeof current !== "object" || current === null || !(key in current)) {
+      return undefined;
+    }
+    current = Reflect.get(current, key);
+  }
+  return current;
+}
+
+function numericStatus(value: unknown): number | undefined {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isInteger(parsed) && parsed >= 100 && parsed <= 599
+    ? parsed
+    : undefined;
+}
+
+function providerStatusFromMessage(message: unknown): string | undefined {
+  if (typeof message !== "string" || message.length > 2_000) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(message);
+    const status = nestedValue(parsed, "error", "status");
+    return typeof status === "string" ? status.slice(0, 100) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function failureDetails(cause: unknown): GeminiFailureDetails {
+  const status = [
+    nestedValue(cause, "status"),
+    nestedValue(cause, "code"),
+    nestedValue(cause, "response", "status"),
+    nestedValue(cause, "error", "code"),
+    nestedValue(cause, "error", "status"),
+  ]
+    .map(numericStatus)
+    .find((candidate) => candidate !== undefined);
+  const rawProviderStatus =
+    nestedValue(cause, "providerStatus") ??
+    nestedValue(cause, "error", "status") ??
+    providerStatusFromMessage(nestedValue(cause, "message"));
+  const providerStatus =
+    typeof rawProviderStatus === "string" &&
+    numericStatus(rawProviderStatus) === undefined
+      ? rawProviderStatus.slice(0, 100).toUpperCase()
+      : undefined;
+  const name = String(nestedValue(cause, "name") ?? "");
+  const message = String(nestedValue(cause, "message") ?? "");
+  const networkFailure =
+    name === "TypeError" &&
+    /fetch|network|socket|connection|econn|timed?\s*out/i.test(message);
+  return {
+    status,
+    providerStatus,
+    retryable:
+      status === 429 ||
+      status === 503 ||
+      providerStatus === "RESOURCE_EXHAUSTED" ||
+      providerStatus === "UNAVAILABLE" ||
+      networkFailure,
+  };
+}
+
+function isAbort(cause: unknown): boolean {
+  const name = nestedValue(cause, "name");
+  return name === "AbortError" || name === "TimeoutError";
+}
+
+function waitForRetry(
+  milliseconds: number,
+  signal: AbortSignal,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const completed = () => {
+      signal.removeEventListener("abort", aborted);
+      resolve();
+    };
+    const timer = setTimeout(completed, milliseconds);
+    const aborted = () => {
+      clearTimeout(timer);
+      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    signal.addEventListener("abort", aborted, { once: true });
+    void Promise.resolve().then(() => {
+      if (!signal.aborted) return;
+      clearTimeout(timer);
+      signal.removeEventListener("abort", aborted);
+    });
+  });
+}
+
+function retryDelay(retryIndex: number, random: () => number): number {
+  const base = GEMINI_RETRY_POLICY.retryDelaysMs[retryIndex] ?? 1_000;
+  return base + Math.floor(random() * GEMINI_RETRY_POLICY.maximumJitterMs);
+}
+
+function attemptLog(input: {
+  requestId: string;
+  model: string;
+  attempt: number;
+  durationMs: number;
+  failure?: GeminiFailureDetails;
+  fallbackUsed: boolean;
+  outcome: "succeeded" | "retrying" | "failed";
+}) {
+  return {
+    requestId: input.requestId,
+    model: input.model,
+    attempt: input.attempt,
+    maximumAttempts: GEMINI_RETRY_POLICY.maximumTotalAttempts,
+    durationMs: input.durationMs,
+    status: input.failure?.status,
+    providerStatus: input.failure?.providerStatus,
+    retryable: input.failure?.retryable ?? false,
+    fallbackUsed: input.fallbackUsed,
+    outcome: input.outcome,
+  };
+}
+
+export async function analyseWithGemini(
+  input: {
+    apiKey: string;
+    model?: string;
+    fallbackModel?: string;
+    image: File;
+    hints?: LocalExtractionHints;
+    signal?: AbortSignal;
+    requestId?: string;
+  },
+  runtime: GeminiRuntimeOptions = {},
+): Promise<AiTimetable> {
+  const now = runtime.now ?? Date.now;
+  const random = runtime.random ?? Math.random;
+  const sleep = runtime.sleep ?? waitForRetry;
+  const logger = runtime.logger ?? console;
+  const deadlineMs = runtime.deadlineMs ?? AI_TIMETABLE_LIMITS.timeoutMs;
+  const deadlineAt = now() + deadlineMs;
   const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    AI_TIMETABLE_LIMITS.timeoutMs,
-  );
+  const timeout = setTimeout(() => {
+    controller.abort(
+      new DOMException("Gemini deadline exceeded", "TimeoutError"),
+    );
+  }, deadlineMs);
+  const parentAborted = () =>
+    controller.abort(
+      input.signal?.reason ?? new DOMException("Aborted", "AbortError"),
+    );
+  if (input.signal?.aborted) parentAborted();
+  else input.signal?.addEventListener("abort", parentAborted, { once: true });
   try {
     const image = bytesToBase64(
       new Uint8Array(await input.image.arrayBuffer()),
     );
     const ai = new GoogleGenAI({ apiKey: input.apiKey });
-    const response = await ai.models.generateContent({
-      model: selectedGeminiModel(input.model),
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: TIMETABLE_PROMPT },
-            ...(input.hints
-              ? [
-                  {
-                    text: `Limited local extraction hints:\n${JSON.stringify(input.hints)}`,
-                  },
-                ]
-              : []),
-            { inlineData: { mimeType: input.image.type, data: image } },
+    const generateContent =
+      runtime.generateContent ??
+      (async ({ model, signal }: GeminiAttemptInput) =>
+        ai.models.generateContent({
+          model,
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { text: TIMETABLE_PROMPT },
+                ...(input.hints
+                  ? [
+                      {
+                        text: `Limited local extraction hints:\n${JSON.stringify(input.hints)}`,
+                      },
+                    ]
+                  : []),
+                { inlineData: { mimeType: input.image.type, data: image } },
+              ],
+            },
           ],
-        },
-      ],
-      config: {
-        abortSignal: controller.signal,
-        temperature: 0.1,
-        responseMimeType: "application/json",
-        responseJsonSchema: GEMINI_TIMETABLE_JSON_SCHEMA,
+          config: {
+            abortSignal: signal,
+            temperature: 0.1,
+            responseMimeType: "application/json",
+            responseJsonSchema: GEMINI_TIMETABLE_JSON_SCHEMA,
+          },
+        }));
+    const primaryModel = selectedGeminiModel(input.model);
+    const configuredFallback = input.fallbackModel?.trim();
+    const fallbackModel =
+      configuredFallback && configuredFallback !== primaryModel
+        ? configuredFallback
+        : undefined;
+    const models = [
+      {
+        model: primaryModel,
+        maximumAttempts: GEMINI_RETRY_POLICY.maximumPrimaryAttempts,
+        fallbackUsed: false,
       },
+      ...(fallbackModel
+        ? [
+            {
+              model: fallbackModel,
+              maximumAttempts: GEMINI_RETRY_POLICY.maximumFallbackAttempts,
+              fallbackUsed: true,
+            },
+          ]
+        : []),
+    ];
+    const requestId = input.requestId ?? crypto.randomUUID();
+    let attempts = 0;
+    let lastCause: unknown;
+    let lastFailure: GeminiFailureDetails = { retryable: false };
+
+    for (const candidate of models) {
+      if (candidate.fallbackUsed && !lastFailure.retryable) break;
+      for (
+        let modelAttempt = 0;
+        modelAttempt < candidate.maximumAttempts &&
+        attempts < GEMINI_RETRY_POLICY.maximumTotalAttempts;
+        modelAttempt += 1
+      ) {
+        if (controller.signal.aborted) {
+          throw (
+            controller.signal.reason ??
+            new DOMException("Aborted", "AbortError")
+          );
+        }
+        if (deadlineAt - now() < GEMINI_RETRY_POLICY.minimumAttemptBudgetMs) {
+          throw new GeminiProviderError({
+            ...lastFailure,
+            retryable: lastFailure.retryable,
+            attempts,
+            model: candidate.model,
+            fallbackUsed: candidate.fallbackUsed,
+            deadlineExceeded: true,
+            cause:
+              lastCause ??
+              new DOMException("Gemini deadline exceeded", "TimeoutError"),
+          });
+        }
+        attempts += 1;
+        const attemptStartedAt = now();
+        try {
+          const response = await generateContent({
+            model: candidate.model,
+            signal: controller.signal,
+          });
+          const timetable = parseGeminiTimetableResponse(response.text);
+          logger.info(
+            "[ai-timetable] Gemini request completed",
+            attemptLog({
+              requestId,
+              model: candidate.model,
+              attempt: attempts,
+              durationMs: now() - attemptStartedAt,
+              fallbackUsed: candidate.fallbackUsed,
+              outcome: "succeeded",
+            }),
+          );
+          return timetable;
+        } catch (cause) {
+          if (controller.signal.aborted) {
+            throw controller.signal.reason ?? cause;
+          }
+          if (isAbort(cause)) throw cause;
+          if (cause instanceof AiTimetableValidationError) throw cause;
+          lastCause = cause;
+          lastFailure = failureDetails(cause);
+          const hasPrimaryRetry =
+            !candidate.fallbackUsed &&
+            modelAttempt + 1 < candidate.maximumAttempts;
+          const canRetryModel =
+            lastFailure.retryable &&
+            hasPrimaryRetry &&
+            attempts < GEMINI_RETRY_POLICY.maximumTotalAttempts;
+          if (canRetryModel) {
+            const delay = retryDelay(modelAttempt, random);
+            if (
+              deadlineAt - now() <
+              delay + GEMINI_RETRY_POLICY.minimumAttemptBudgetMs
+            ) {
+              throw new GeminiProviderError({
+                ...lastFailure,
+                attempts,
+                model: candidate.model,
+                fallbackUsed: candidate.fallbackUsed,
+                deadlineExceeded: true,
+                cause,
+              });
+            }
+            logger.warn(
+              "[ai-timetable] Retrying Gemini request",
+              attemptLog({
+                requestId,
+                model: candidate.model,
+                attempt: attempts,
+                durationMs: now() - attemptStartedAt,
+                failure: lastFailure,
+                fallbackUsed: candidate.fallbackUsed,
+                outcome: "retrying",
+              }),
+            );
+            await sleep(delay, controller.signal);
+            continue;
+          }
+          const canUseFallback =
+            lastFailure.retryable &&
+            !candidate.fallbackUsed &&
+            Boolean(fallbackModel) &&
+            attempts < GEMINI_RETRY_POLICY.maximumTotalAttempts;
+          if (canUseFallback) {
+            logger.warn(
+              "[ai-timetable] Switching to configured Gemini fallback",
+              attemptLog({
+                requestId,
+                model: candidate.model,
+                attempt: attempts,
+                durationMs: now() - attemptStartedAt,
+                failure: lastFailure,
+                fallbackUsed: false,
+                outcome: "retrying",
+              }),
+            );
+            break;
+          }
+          const finalError = new GeminiProviderError({
+            ...lastFailure,
+            attempts,
+            model: candidate.model,
+            fallbackUsed: candidate.fallbackUsed,
+            cause,
+          });
+          logger.error(
+            "[ai-timetable] Gemini request failed",
+            attemptLog({
+              requestId,
+              model: candidate.model,
+              attempt: attempts,
+              durationMs: now() - attemptStartedAt,
+              failure: lastFailure,
+              fallbackUsed: candidate.fallbackUsed,
+              outcome: "failed",
+            }),
+          );
+          throw finalError;
+        }
+      }
+    }
+    throw new GeminiProviderError({
+      ...lastFailure,
+      attempts,
+      model: fallbackModel ?? primaryModel,
+      fallbackUsed: Boolean(fallbackModel),
+      cause: lastCause,
     });
-    return parseGeminiTimetableResponse(response.text);
   } finally {
     clearTimeout(timeout);
+    input.signal?.removeEventListener("abort", parentAborted);
   }
 }

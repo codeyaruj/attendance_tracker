@@ -171,6 +171,40 @@ describe("local extraction UI", () => {
     expect(onAi).toHaveBeenCalledOnce();
   });
 
+  it("restores retry and manual actions after a retryable AI failure", () => {
+    const onAi = vi.fn(async () => undefined);
+    const view = render(
+      <ExtractionError
+        message="The structure was unreliable."
+        onRetry={vi.fn()}
+        onManual={vi.fn()}
+        onAi={onAi}
+        aiAvailable
+        aiBusy
+        aiError="Gemini is temporarily busy. Please wait a moment and try again."
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Reading schedule with AI…" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Enter timetable manually" }),
+    ).toBeEnabled();
+
+    view.rerender(
+      <ExtractionError
+        message="The structure was unreliable."
+        onRetry={vi.fn()}
+        onManual={vi.fn()}
+        onAi={onAi}
+        aiAvailable
+        aiError="Gemini is temporarily busy. Please wait a moment and try again."
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Try AI again" })).toBeEnabled();
+    expect(screen.getByText(/Gemini is temporarily busy/)).toBeVisible();
+  });
+
   it("keeps local alternatives available while AI is offline", () => {
     render(
       <ExtractionError

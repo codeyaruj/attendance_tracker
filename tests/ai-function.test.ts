@@ -1,11 +1,26 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createTimetableAnalysisHandler } from "@/functions/api/timetable/analyse";
-import { DEFAULT_GEMINI_MODEL } from "@/functions/api/timetable/gemini";
+import {
+  DEFAULT_GEMINI_MODEL,
+  GeminiProviderError,
+} from "@/functions/api/timetable/gemini";
 import { validAiTimetable } from "./ai-timetable-validation.test";
 
-function context(request: Request, key = "test-key", model?: string) {
-  return { request, env: { GEMINI_API_KEY: key, GEMINI_MODEL: model } };
+function context(
+  request: Request,
+  key = "test-key",
+  model?: string,
+  fallbackModel?: string,
+) {
+  return {
+    request,
+    env: {
+      GEMINI_API_KEY: key,
+      GEMINI_MODEL: model,
+      GEMINI_FALLBACK_MODEL: fallbackModel,
+    },
+  };
 }
 
 function uploadRequest(
@@ -145,6 +160,52 @@ describe("Cloudflare timetable analysis Function", () => {
     expect(provider).toHaveBeenLastCalledWith(
       expect.objectContaining({ model: "custom-model" }),
     );
+
+    await createTimetableAnalysisHandler(provider)(
+      context(
+        uploadRequest({ image: image() }),
+        "test-key",
+        "custom-model",
+        "fallback-model",
+      ),
+    );
+    expect(provider).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        model: "custom-model",
+        fallbackModel: "fallback-model",
+        signal: expect.any(AbortSignal),
+        requestId: expect.any(String),
+      }),
+    );
+  });
+
+  it("maps exhausted Gemini capacity to a retryable HTTP 503", async () => {
+    const response = await createTimetableAnalysisHandler(
+      vi.fn(async () => {
+        throw new GeminiProviderError({
+          status: 503,
+          providerStatus: "UNAVAILABLE",
+          retryable: true,
+          attempts: 3,
+          model: "primary-model",
+          fallbackUsed: false,
+          cause: new Error("private provider detail"),
+        });
+      }),
+    )(context(uploadRequest({ image: image() })));
+    const copy = response.clone();
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Retry-After")).toBe("5");
+    expect(response.headers.get("X-Request-ID")).toBeTruthy();
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: {
+        code: "AI_PROVIDER_UNAVAILABLE",
+        message: "AI schedule analysis is temporarily unavailable.",
+        retryable: true,
+      },
+    });
+    expect(await copy.text()).not.toContain("private provider detail");
   });
 
   it("maps rate limits and invalid/empty model output safely", async () => {
@@ -203,7 +264,7 @@ describe("Cloudflare timetable analysis Function", () => {
     [429, { status: 429 }, "AI_RATE_LIMITED", 429],
     [500, { error: { code: 500 } }, "AI_PROVIDER_ERROR", 502],
     [502, { response: { status: 502 } }, "AI_PROVIDER_ERROR", 502],
-    [503, { code: 503 }, "AI_PROVIDER_ERROR", 502],
+    [503, { code: 503 }, "AI_PROVIDER_UNAVAILABLE", 503],
     [504, { response: { status: 504 } }, "AI_TIMEOUT", 504],
   ])(
     "maps provider HTTP %i safely",

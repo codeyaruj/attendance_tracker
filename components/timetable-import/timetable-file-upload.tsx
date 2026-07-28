@@ -80,6 +80,7 @@ export function TimetableFileUpload({
   );
   const abortRef = useRef<AbortController | null>(null);
   const aiAbortRef = useRef<AbortController | null>(null);
+  const aiRequestActiveRef = useRef(false);
   const [mode, setMode] = useState<UploadMode>("SELECT");
   const [file, setFile] = useState<File>();
   const [previewUrl, setPreviewUrl] = useState("");
@@ -211,9 +212,10 @@ export function TimetableFileUpload({
   };
 
   const extractWithAi = async () => {
-    if (!file || aiBusy || !online) return;
+    if (!file || aiBusy || aiRequestActiveRef.current || !online) return;
     const controller = new AbortController();
     aiAbortRef.current = controller;
+    aiRequestActiveRef.current = true;
     setAiBusy(true);
     setAiError("");
     try {
@@ -239,6 +241,7 @@ export function TimetableFileUpload({
       }
     } finally {
       if (aiAbortRef.current === controller) aiAbortRef.current = null;
+      aiRequestActiveRef.current = false;
       setAiBusy(false);
     }
   };
