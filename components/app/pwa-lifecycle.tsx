@@ -1,15 +1,19 @@
 "use client";
 
 import { Download, RefreshCw, X } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { attendSafeRepository } from "@/db";
 import { useAppInstall } from "@/hooks/use-app-install";
+import { useAttendSafeData } from "@/hooks/use-attendsafe-data";
 import { criticalOperationActive } from "@/lib/pwa/critical-operation";
 
 export function PwaLifecycle() {
+  const pathname = usePathname();
+  const { data } = useAttendSafeData();
   const [waiting, setWaiting] = useState<ServiceWorker>();
   const {
     method,
@@ -84,8 +88,11 @@ export function PwaLifecycle() {
     waiting.postMessage({ type: "SKIP_WAITING" });
   };
 
-  const showInstall = method === "NATIVE" && !promotionalDismissed;
-  if (!waiting && !showInstall) return null;
+  const onboardingActive = pathname === "/" && !data?.activeProfile;
+  const showInstall =
+    method === "NATIVE" && !promotionalDismissed && !onboardingActive;
+  const showUpdate = Boolean(waiting) && !onboardingActive;
+  if (!showUpdate && !showInstall) return null;
 
   return (
     <aside
@@ -93,7 +100,7 @@ export function PwaLifecycle() {
       aria-live="polite"
       aria-label="Application notice"
     >
-      {waiting ? (
+      {showUpdate ? (
         <div className="flex items-start gap-3">
           <RefreshCw className="text-primary mt-1 size-5 shrink-0" />
           <div className="min-w-0 flex-1">

@@ -140,6 +140,19 @@ async function expectControlReceivesPointerEvents(
     .toBe(true);
 }
 
+async function dispatchDeferredInstallPrompt(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const event = new Event("beforeinstallprompt", { cancelable: true });
+    Object.defineProperties(event, {
+      prompt: { value: async () => undefined },
+      userChoice: {
+        value: Promise.resolve({ outcome: "accepted", platform: "web" }),
+      },
+    });
+    window.dispatchEvent(event);
+  });
+}
+
 test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(FIXED_NOW);
   await resetLocalData(page);
@@ -148,6 +161,7 @@ test.beforeEach(async ({ page }) => {
 test("manual timetable creation supports attendance marking and dashboard review", async ({
   page,
 }) => {
+  await dispatchDeferredInstallPrompt(page);
   await page.getByTestId("choose-manual").click();
   await completeProfileSetup(page);
 
@@ -174,10 +188,27 @@ test("manual timetable creation supports attendance marking and dashboard review
   await page.getByTestId("review-manual-timetable").click();
 
   await advanceTimetableConfirmation(page);
+  await expect(page.getByLabel("Application notice")).toHaveCount(0);
   await expectControlReceivesPointerEvents(page, "confirm-timetable");
   await page.getByTestId("confirm-timetable").click();
 
   await expect(page).toHaveURL(/\/today\/?$/);
+  await expect(page.getByTestId("today-page")).toBeVisible();
+  await expect(page.getByLabel("Application notice")).toBeVisible();
+  await page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("link", { name: "Settings", exact: true })
+    .click();
+  await expect(page.getByTestId("settings-page")).toBeVisible();
+  await expect(
+    page
+      .getByTestId("settings-page")
+      .getByRole("button", { name: "Install App", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("link", { name: "Today", exact: true })
+    .click();
   await expect(page.getByTestId("today-page")).toBeVisible();
   await markFirstClassPresent(page);
   await page.goto("/dashboard");

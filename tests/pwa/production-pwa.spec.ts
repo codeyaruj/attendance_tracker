@@ -31,6 +31,18 @@ async function storeCount(
   );
 }
 
+async function loadDemoDeterministically(
+  page: import("@playwright/test").Page,
+) {
+  await expect(page.getByTestId("load-demo")).toBeVisible();
+  await page.getByTestId("load-demo").click();
+  await expect(page.getByTestId("dashboard-page")).toBeVisible();
+  await expect.poll(() => storeCount(page, "profiles")).toBe(1);
+  await expect
+    .poll(() => storeCount(page, "timetableSlots"))
+    .toBeGreaterThan(0);
+}
+
 test("real local records survive reload, offline writes, backup, worker update, and cache deletion", async ({
   context,
   page,
@@ -38,17 +50,19 @@ test("real local records survive reload, offline writes, backup, worker update, 
   await page.clock.setFixedTime(new Date("2026-07-23T10:00:00+05:30"));
   await page.goto("/");
   await waitForControl(page);
-  await expect(page.getByTestId("load-demo")).toBeVisible();
-  await page.getByTestId("load-demo").click();
-  await expect(page.getByTestId("dashboard-page")).toBeVisible();
+  await loadDemoDeterministically(page);
   await page.goto("/today/");
   const firstSession = page
     .getByTestId("today-session-list")
     .locator('[data-testid^="today-session-"]')
     .first();
-  await firstSession
-    .getByRole("button", { name: "Present", exact: true })
-    .click();
+  await expect(firstSession).toBeVisible();
+  const presentButton = firstSession.getByRole("button", {
+    name: "Present",
+    exact: true,
+  });
+  await expect(presentButton).toBeEnabled();
+  await presentButton.click();
   await expect.poll(() => storeCount(page, "attendanceRecords")).toBe(1);
 
   await page.reload();
@@ -133,14 +147,19 @@ test("local records survive closing and reopening the application page", async (
   await page.clock.setFixedTime(new Date("2026-07-23T10:00:00+05:30"));
   await page.goto("/");
   await waitForControl(page);
-  await page.getByTestId("load-demo").click();
+  await loadDemoDeterministically(page);
   await page.goto("/today/");
-  await page
+  const firstSession = page
     .getByTestId("today-session-list")
     .locator('[data-testid^="today-session-"]')
-    .first()
-    .getByRole("button", { name: "Present", exact: true })
-    .click();
+    .first();
+  await expect(firstSession).toBeVisible();
+  const presentButton = firstSession.getByRole("button", {
+    name: "Present",
+    exact: true,
+  });
+  await expect(presentButton).toBeEnabled();
+  await presentButton.click();
   await expect.poll(() => storeCount(page, "attendanceRecords")).toBe(1);
 
   await page.close();
