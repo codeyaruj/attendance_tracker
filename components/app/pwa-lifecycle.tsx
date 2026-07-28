@@ -13,6 +13,7 @@ import { criticalOperationActive } from "@/lib/pwa/critical-operation";
 export function PwaLifecycle() {
   const pathname = usePathname();
   const [waiting, setWaiting] = useState<ServiceWorker>();
+  const [desktopViewport, setDesktopViewport] = useState(false);
   const {
     method,
     outcome,
@@ -21,6 +22,15 @@ export function PwaLifecycle() {
     dismissPromotion,
   } = useAppInstall();
   const reloading = useRef(false);
+
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1024px)");
+    const syncViewport = () => setDesktopViewport(query.matches);
+
+    syncViewport();
+    query.addEventListener("change", syncViewport);
+    return () => query.removeEventListener("change", syncViewport);
+  }, []);
 
   useEffect(() => {
     if (
@@ -88,7 +98,10 @@ export function PwaLifecycle() {
 
   const onboardingActive = pathname === "/";
   const showInstall =
-    method === "NATIVE" && !promotionalDismissed && !onboardingActive;
+    desktopViewport &&
+    method === "NATIVE" &&
+    !promotionalDismissed &&
+    !onboardingActive;
   const showUpdate = Boolean(waiting) && !onboardingActive;
   if (!showUpdate && !showInstall) return null;
 

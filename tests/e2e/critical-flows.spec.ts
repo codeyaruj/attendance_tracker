@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const DATABASE_NAME = "attendsafe";
 const FIXED_NOW = new Date("2026-07-23T10:00:00+05:30");
@@ -88,10 +88,16 @@ function todaySessionCards(page: Page) {
 async function markFirstClassPresent(page: Page): Promise<void> {
   const firstCard = todaySessionCards(page).first();
   await expect(firstCard).toBeVisible();
-  await firstCard.getByRole("button", { name: "Present", exact: true }).click();
-  await expect(
-    firstCard.getByRole("button", { name: "Present", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  const presentButton = firstCard.getByRole("button", {
+    name: "Present",
+    exact: true,
+  });
+  await expect(presentButton).toBeVisible();
+  await expect(presentButton).toBeEnabled();
+  await scrollControlIntoSafeView(presentButton);
+  await expectLocatorReceivesPointerEvents(presentButton);
+  await presentButton.click();
+  await expect(presentButton).toHaveAttribute("aria-pressed", "true");
   await expect
     .poll(async () => (await readStore(page, "attendanceRecords")).length)
     .toBe(1);
@@ -120,11 +126,19 @@ async function advanceTimetableConfirmation(page: Page): Promise<void> {
   await expect(page.getByTestId("confirm-timetable")).toBeVisible();
 }
 
-async function expectControlReceivesPointerEvents(
-  page: Page,
-  testId: string,
+async function scrollControlIntoSafeView(control: Locator): Promise<void> {
+  await control.evaluate((element) => {
+    element.scrollIntoView({
+      block: "center",
+      inline: "nearest",
+      behavior: "instant",
+    });
+  });
+}
+
+async function expectLocatorReceivesPointerEvents(
+  control: Locator,
 ): Promise<void> {
-  const control = page.getByTestId(testId);
   await expect(control).toBeVisible();
   await expect(control).toBeEnabled();
   await expect(control).toBeInViewport();
@@ -182,10 +196,17 @@ async function expectControlReceivesPointerEvents(
       };
     });
     throw new Error(
-      `Control ${testId} did not receive pointer events. Diagnostics: ${JSON.stringify(diagnostics)}`,
+      `Control did not receive pointer events. Diagnostics: ${JSON.stringify(diagnostics)}`,
       { cause },
     );
   }
+}
+
+async function expectControlReceivesPointerEvents(
+  page: Page,
+  testId: string,
+): Promise<void> {
+  await expectLocatorReceivesPointerEvents(page.getByTestId(testId));
 }
 
 type InAppNavigationLabel =
@@ -249,7 +270,8 @@ test.beforeEach(async ({ page }) => {
 
 test("manual timetable creation supports attendance marking and dashboard review", async ({
   page,
-}) => {
+}, testInfo) => {
+  const mobile = testInfo.project.name === "mobile-chromium";
   await dispatchDeferredInstallPrompt(page);
   await page.getByTestId("choose-manual").click();
   await completeProfileSetup(page);
@@ -315,14 +337,19 @@ test("manual timetable creation supports attendance marking and dashboard review
       return appeared;
     }),
   ).toBe(false);
-  await expect(page.getByLabel("Application notice")).toBeVisible();
+  if (mobile) {
+    expect(await page.evaluate(() => window.innerWidth)).toBeLessThan(1024);
+    await expect(page.getByLabel("Application notice")).toHaveCount(0);
+  } else {
+    await expect(page.getByLabel("Application notice")).toBeVisible();
+  }
   await navigateInApp(page, "Settings");
   await expect(page.getByTestId("settings-page")).toBeVisible();
-  await expect(
-    page
-      .getByTestId("settings-page")
-      .getByRole("button", { name: "Install App", exact: true }),
-  ).toBeVisible();
+  const installButton = page
+    .getByTestId("settings-page")
+    .getByRole("button", { name: "Install App", exact: true });
+  await expect(installButton).toBeVisible();
+  await expect(installButton).toBeEnabled();
   await navigateInApp(page, "Today");
   await expect(page.getByTestId("today-page")).toBeVisible();
   await markFirstClassPresent(page);

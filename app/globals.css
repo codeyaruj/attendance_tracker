@@ -87,6 +87,12 @@ html {
   text-rendering: optimizeLegibility;
 }
 
+@media (max-width: 1023px) {
+  html {
+    scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+  }
+}
+
 body {
   min-height: 100dvh;
   overflow-x: hidden;
