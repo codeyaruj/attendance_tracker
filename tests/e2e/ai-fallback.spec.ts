@@ -117,6 +117,14 @@ test("AI fallback requires consent and opens the existing editable review", asyn
     await page.getByRole("button", { name: /^Continue/ }).click();
   }
   await expect(page.getByText("AI Extracted Class").first()).toBeVisible();
+  await page.getByRole("button", { name: "Weekly grid" }).click();
+  await expect(page.getByTestId("weekly-grid-corner")).toHaveText("Day / Time");
+  await expect(
+    page.getByRole("button", {
+      name: "AI501, Thursday, 11:00 AM to 12:00 PM",
+    }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Form list" }).click();
   expect(
     await page.evaluate(
       () =>

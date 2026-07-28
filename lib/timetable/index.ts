@@ -5,3 +5,4 @@ export * from "./filter";
 export * from "./occurrence-id";
 export * from "./pasted-text-parser";
 export * from "./session-resolver";
+export * from "./weekly-grid";

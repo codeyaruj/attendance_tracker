@@ -702,6 +702,17 @@ test("@responsive primary pages fit narrow viewports and expose touch-friendly c
     ).toBeVisible();
   }
 
+  await page.goto("/settings/");
+  const labs = page.getByRole("checkbox", { name: /Labs/ });
+  await page.getByText("Labs", { exact: true }).click();
+  await expect(labs).toBeChecked();
+  await expect
+    .poll(async () => {
+      const settings = await readStore(page, "appSettings");
+      return (settings[0]?.trackedClassTypes as Record<string, boolean>)?.LAB;
+    })
+    .toBe(true);
+
   await page.goto("/timetable/");
   await page.getByRole("button", { name: "Agenda", exact: true }).click();
   await expect(
@@ -710,6 +721,36 @@ test("@responsive primary pages fit narrow viewports and expose touch-friendly c
   await page.getByRole("button", { name: "Week", exact: true }).click();
   await expect(
     page.getByRole("region", { name: "Weekly timetable" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("weekly-grid-corner")).toHaveText("Day / Time");
+  await expect(page.getByTestId("weekly-grid-day-monday")).toBeVisible();
+  const timeHeaders = page
+    .getByRole("region", { name: "Weekly timetable" })
+    .getByRole("columnheader");
+  await expect(timeHeaders.nth(1)).toContainText(/AM|PM/);
+
+  const labButton = page.getByRole("button", {
+    name: /DSP Lab, Thursday, 2:00 PM to 4:00 PM, A/,
+  });
+  const lab = page.getByTestId(
+    "timetable-slot-00000000-0000-4000-8000-000000000223",
+  );
+  await expect(lab).toHaveCSS("grid-column-end", "span 2");
+  const weeklyScroll = page.getByTestId("weekly-timetable-scroll");
+  if ((page.viewportSize()?.width ?? 1280) < 1024) {
+    expect(
+      await weeklyScroll.evaluate(
+        (element) => element.scrollWidth > element.clientWidth,
+      ),
+    ).toBe(true);
+  }
+  await expect(page.getByTestId("weekly-grid-day-monday")).toHaveCSS(
+    "position",
+    "sticky",
+  );
+  await labButton.click();
+  await expect(
+    page.getByRole("dialog", { name: "Digital Signal Processing Lab" }),
   ).toBeVisible();
 
   await page.goto("/settings/");

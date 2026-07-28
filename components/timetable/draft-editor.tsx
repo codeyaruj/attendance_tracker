@@ -339,6 +339,7 @@ export function DraftEditor({
         <WeeklyGridBuilder
           slots={value.timetableSlots}
           subjects={value.subjects}
+          timeSlots={value.timeSlots}
           onAdd={(day, start) => {
             setEditingSlot(undefined);
             setNewSlotContext({ day, start });

@@ -19,6 +19,7 @@ import {
   type DraftSlot,
   type DraftSubject,
 } from "@/types";
+import { WeeklyTimetableGrid } from "./weekly-timetable-grid";
 
 interface SessionDraft {
   id: string;
@@ -219,26 +220,19 @@ export function AddSubjectDialog({
               {room.trim() ? ` · ${room.trim()}` : ""}
             </p>
           </Card>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {candidateSlots
-              .slice()
-              .sort(
-                (left, right) =>
-                  DAYS_OF_WEEK.indexOf(left.dayOfWeek) -
-                    DAYS_OF_WEEK.indexOf(right.dayOfWeek) ||
-                  left.startTime.localeCompare(right.startTime),
-              )
-              .map((slot) => (
-                <Card key={slot.temporaryId} className="border-primary/25 p-4">
-                  <p className="text-primary text-xs font-bold tracking-wider uppercase">
-                    {titleCase(slot.dayOfWeek)}
-                  </p>
-                  <p className="mt-1 text-lg font-extrabold">
-                    {slot.startTime}–{slot.endTime}
-                  </p>
-                </Card>
-              ))}
-          </div>
+          <WeeklyTimetableGrid
+            ariaLabel="Subject weekly preview"
+            entries={candidateSlots.map((slot) => ({
+              id: slot.temporaryId,
+              dayOfWeek: slot.dayOfWeek,
+              startTime: slot.startTime,
+              endTime: slot.endTime,
+              title: subject.code || subject.shortName || subject.name,
+              subjectName: subject.name,
+              faculty: parsedFaculty,
+              room: room.trim() || undefined,
+            }))}
+          />
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button variant="ghost" onClick={resetAndClose}>
               Back to timetable

@@ -64,6 +64,10 @@ import {
 } from "@/types";
 
 import { DraftEditor } from "./draft-editor";
+import {
+  WeeklyTimetableGrid,
+  type WeeklyTimetableEntry,
+} from "./weekly-timetable-grid";
 
 const FALLBACK_DAYS = DAYS_OF_WEEK;
 
@@ -499,9 +503,39 @@ export function TimetableScreen() {
         (session) => session.timetableSlotId === selectedSlot.id,
       )
     : undefined;
-  const timeRows = Array.from(
-    new Set(visibleSlots.map((slot) => slot.startTime)),
-  ).sort();
+  const weeklyEntries: WeeklyTimetableEntry[] = visibleSlots.map((slot) => {
+    const subject = slot.subjectId
+      ? subjectsById.get(slot.subjectId)
+      : undefined;
+    const electiveGroup = slot.electiveGroupId
+      ? data.electiveGroups.find((group) => group.id === slot.electiveGroupId)
+      : undefined;
+    return {
+      id: slot.id,
+      dayOfWeek: slot.dayOfWeek,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      title: slot.isBreak
+        ? "Break"
+        : subject?.shortName || subject?.code || subject?.name || "Unassigned",
+      subjectName: subject?.name,
+      faculty: slot.faculty,
+      room: slot.room,
+      qualifiers: [
+        ...slot.batchRestriction,
+        ...(electiveGroup ? [electiveGroup.name] : []),
+        ...(slot.weekPattern !== "EVERY_WEEK"
+          ? [titleCase(slot.weekPattern)]
+          : []),
+      ],
+      isBreak: slot.isBreak,
+      isPlaceholder: slot.isPlaceholder,
+      active:
+        slot.dayOfWeek === dayNow &&
+        slot.startTime <= timeNow &&
+        timeNow < slot.endTime,
+    };
+  });
 
   const markToday = async (status: AttendanceStatus) => {
     if (!todaySession) return;
@@ -613,7 +647,7 @@ export function TimetableScreen() {
                 className="text-muted-foreground text-xs"
                 id="week-scroll-hint"
               >
-                Scroll sideways to see every day
+                Scroll sideways to see every time
               </p>
             ) : null}
           </div>
@@ -685,75 +719,12 @@ export function TimetableScreen() {
           ) : null}
 
           {presentation === "WEEK" ? (
-            <section
-              className="border-border bg-surface overflow-hidden rounded-2xl border"
-              aria-label="Weekly timetable"
-              aria-describedby="week-scroll-hint"
-            >
-              <div
-                className="overflow-x-auto overscroll-x-contain"
-                tabIndex={0}
-              >
-                <div className="min-w-[1180px]">
-                  <div className="border-border bg-secondary/60 grid grid-cols-[88px_repeat(7,minmax(145px,1fr))] border-b">
-                    <div className="text-muted-foreground p-3 text-xs font-bold tracking-wider uppercase">
-                      Time
-                    </div>
-                    {visibleDays.map((day) => (
-                      <div
-                        key={day}
-                        className={cn(
-                          "border-border border-l p-3 text-center text-xs font-bold tracking-wider uppercase",
-                          day === dayNow && "bg-primary-soft text-primary",
-                        )}
-                      >
-                        {titleCase(day)}
-                      </div>
-                    ))}
-                  </div>
-                  {timeRows.map((time) => (
-                    <div
-                      key={time}
-                      className="border-border grid min-h-28 grid-cols-[88px_repeat(7,minmax(145px,1fr))] border-b last:border-b-0"
-                    >
-                      <div className="text-muted-foreground p-3 text-sm font-semibold">
-                        {formatClockTime(time)}
-                      </div>
-                      {visibleDays.map((day) => (
-                        <div
-                          key={day}
-                          className="border-border grid content-start gap-2 border-l p-2"
-                        >
-                          {visibleSlots
-                            .filter(
-                              (slot) =>
-                                slot.dayOfWeek === day &&
-                                slot.startTime === time,
-                            )
-                            .map((slot) => (
-                              <SlotPill
-                                key={slot.id}
-                                slot={slot}
-                                subject={
-                                  slot.subjectId
-                                    ? subjectsById.get(slot.subjectId)
-                                    : undefined
-                                }
-                                active={
-                                  day === dayNow &&
-                                  slot.startTime <= timeNow &&
-                                  timeNow < slot.endTime
-                                }
-                                onClick={() => setSelectedSlotId(slot.id)}
-                              />
-                            ))}
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </section>
+            <WeeklyTimetableGrid
+              entries={weeklyEntries}
+              days={visibleDays}
+              onSessionSelect={(entry) => setSelectedSlotId(entry.id)}
+              describedBy="week-scroll-hint"
+            />
           ) : null}
         </>
       )}
