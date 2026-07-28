@@ -1,4 +1,5 @@
 import type { AttendSafeSnapshot } from "@/db";
+import { format, parseISO, subDays } from "date-fns";
 import {
   buildSubjectAttendanceSummaries,
   calculateRecoveryClasses,
@@ -68,6 +69,18 @@ function resolutionContext(snapshot: AttendSafeSnapshot) {
   } as const;
 }
 
+function historicalResolutionContext(snapshot: AttendSafeSnapshot) {
+  const context = resolutionContext(snapshot);
+  if (!context) return undefined;
+  return {
+    ...context,
+    trackedClassTypes: undefined,
+    includeZeroCredit: true,
+    includeDisabled: true,
+    includeMissingSubjects: true,
+  } as const;
+}
+
 export function resolveSnapshotSessionsForDate(
   snapshot: AttendSafeSnapshot,
   date: string,
@@ -85,6 +98,48 @@ export function resolveSnapshotSessionsInRange(
   return context
     ? resolveSessionsInRange({ ...context, startDate, endDate })
     : [];
+}
+
+export function resolveSnapshotHistoricalSessionsForDate(
+  snapshot: AttendSafeSnapshot,
+  date: string,
+): ResolvedSession[] {
+  const context = historicalResolutionContext(snapshot);
+  return context ? resolveSessionsForDate({ ...context, date }) : [];
+}
+
+export function resolveSnapshotHistoricalSessionsInRange(
+  snapshot: AttendSafeSnapshot,
+  startDate: string,
+  endDate: string,
+): ResolvedSession[] {
+  const context = historicalResolutionContext(snapshot);
+  return context
+    ? resolveSessionsInRange({ ...context, startDate, endDate })
+    : [];
+}
+
+export function unmarkedHistoricalSessions(
+  snapshot: AttendSafeSnapshot,
+  today = isoDateInTimeZone(new Date(), snapshot.activeProfile?.timezone),
+): ResolvedSession[] {
+  const semester = snapshot.activeSemester;
+  if (!semester || today <= semester.startDate) return [];
+  const yesterday = format(subDays(parseISO(today), 1), "yyyy-MM-dd");
+  const endDate = yesterday < semester.endDate ? yesterday : semester.endDate;
+  if (endDate < semester.startDate) return [];
+  return resolveSnapshotHistoricalSessionsInRange(
+    snapshot,
+    semester.startDate,
+    endDate,
+  ).filter(
+    (session) =>
+      session.attendanceStatus === "NOT_MARKED" &&
+      (session.status === "SCHEDULED" ||
+        session.status === "HELD" ||
+        session.status === "EXTRA" ||
+        session.status === "RESCHEDULED"),
+  );
 }
 
 export function currentAttendanceSessions(

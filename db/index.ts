@@ -3,7 +3,6 @@ import Dexie from "dexie";
 import type {
   AcademicException,
   AppSettings,
-  AttendanceStatus,
   ClassSession,
   RecentAction,
   Semester,
@@ -23,10 +22,13 @@ import {
 } from "./database";
 import {
   bulkMarkAttendanceWithUndo,
+  applyHistoricalAttendanceWithUndo,
   markAttendanceWithUndo,
   undoRecentAction,
   upsertSessionWithUndo,
   type BulkAttendanceChange,
+  type HistoricalAttendanceChange,
+  type MarkAttendanceStatus,
 } from "./recent-actions";
 import {
   createEntityId,
@@ -73,9 +75,6 @@ export const db: AttendSafeDatabase = new Proxy({} as AttendSafeDatabase, {
     return Reflect.set(getAttendSafeDatabase(), property, value);
   },
 });
-
-export type MarkAttendanceStatus =
-  AttendanceStatus | "CANCELLED" | "NOT_CONDUCTED";
 
 export interface ImportOptions {
   mode?: "REPLACE";
@@ -173,6 +172,17 @@ export class AttendSafeRepository {
     description?: string,
   ): ReturnType<typeof bulkMarkAttendanceWithUndo> {
     return bulkMarkAttendanceWithUndo(this.database(), changes, description);
+  }
+
+  backfillAttendance(
+    changes: readonly HistoricalAttendanceChange[],
+    maximumDate: string,
+    description?: string,
+  ): ReturnType<typeof applyHistoricalAttendanceWithUndo> {
+    return applyHistoricalAttendanceWithUndo(this.database(), changes, {
+      maximumDate,
+      ...(description ? { description } : {}),
+    });
   }
 
   upsertSession(

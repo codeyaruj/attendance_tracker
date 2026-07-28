@@ -36,6 +36,8 @@ export interface SessionResolutionContext {
   selectedElectiveSubjectIds?: readonly string[];
   trackedClassTypes?: Partial<Record<ClassType, boolean>>;
   includeZeroCredit?: boolean;
+  includeDisabled?: boolean;
+  includeMissingSubjects?: boolean;
   weekStartsOn?: WeekStartPreference;
 }
 
@@ -453,6 +455,8 @@ export function resolveSessionsForDate({
   selectedElectiveSubjectIds,
   trackedClassTypes,
   includeZeroCredit = true,
+  includeDisabled = false,
+  includeMissingSubjects = false,
   weekStartsOn = "MONDAY",
 }: ResolveSessionsForDateInput): ResolvedSession[] {
   parseIsoDate(date);
@@ -471,10 +475,19 @@ export function resolveSessionsForDate({
     selectedElectiveSubjectIds,
     trackedClassTypes,
     includeZeroCredit,
+    includeDisabled,
+    includeMissingSubjects,
   };
   const eligibleSubjects = filterSubjectsForTracking(commonFilters);
-  const eligibleSubjectIds = new Set(eligibleSubjects.map(({ id }) => id));
   const eligibleSlots = filterTimetableSlots({ slots, ...commonFilters });
+  const eligibleSubjectIds = new Set([
+    ...eligibleSubjects.map(({ id }) => id),
+    ...(includeMissingSubjects
+      ? eligibleSlots.flatMap((slot) =>
+          slot.subjectId ? [slot.subjectId] : [],
+        )
+      : []),
+  ]);
   const eligibleSlotIds = new Set(eligibleSlots.map(({ id }) => id));
 
   const version = resolveTimetableVersionForDate(

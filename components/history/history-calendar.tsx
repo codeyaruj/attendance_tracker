@@ -28,6 +28,8 @@ export function HistoryCalendar({
   today,
   selectedStart,
   selectedEnd,
+  minimumDate,
+  maximumDate,
   onMonthChange,
   onSelectDate,
 }: {
@@ -36,12 +38,23 @@ export function HistoryCalendar({
   today: string;
   selectedStart: string;
   selectedEnd: string;
+  minimumDate?: string;
+  maximumDate?: string;
   onMonthChange: (month: Date) => void;
   onSelectDate: (date: string) => void;
 }) {
   const first = startOfWeek(startOfMonth(month), { weekStartsOn: 1 });
   const last = endOfWeek(endOfMonth(month), { weekStartsOn: 1 });
   const days = eachDayOfInterval({ start: first, end: last });
+  const previousMonth = subMonths(month, 1);
+  const nextMonth = addMonths(month, 1);
+  const previousDisabled = Boolean(
+    minimumDate &&
+    format(endOfMonth(previousMonth), "yyyy-MM-dd") < minimumDate,
+  );
+  const nextDisabled = Boolean(
+    maximumDate && format(startOfMonth(nextMonth), "yyyy-MM-dd") > maximumDate,
+  );
   const activityByDate = new Map<string, number>();
   for (const entry of entries) {
     if (!entry.isActivity) continue;
@@ -66,7 +79,8 @@ export function HistoryCalendar({
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => onMonthChange(subMonths(month, 1))}
+            onClick={() => onMonthChange(previousMonth)}
+            disabled={previousDisabled}
             aria-label="Previous month"
           >
             <ChevronLeft className="size-5" aria-hidden="true" />
@@ -75,8 +89,10 @@ export function HistoryCalendar({
             variant="ghost"
             size="sm"
             onClick={() => {
-              onMonthChange(parseISO(today));
-              onSelectDate(today);
+              const date =
+                maximumDate && today > maximumDate ? maximumDate : today;
+              onMonthChange(parseISO(date));
+              onSelectDate(date);
             }}
           >
             Today
@@ -84,7 +100,8 @@ export function HistoryCalendar({
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => onMonthChange(addMonths(month, 1))}
+            onClick={() => onMonthChange(nextMonth)}
+            disabled={nextDisabled}
             aria-label="Next month"
           >
             <ChevronRight className="size-5" aria-hidden="true" />
@@ -114,6 +131,10 @@ export function HistoryCalendar({
             date >= selectedStart &&
             date <= (selectedEnd || selectedStart);
           const activity = activityByDate.get(date) ?? 0;
+          const outsideAllowedRange = Boolean(
+            (minimumDate && date < minimumDate) ||
+            (maximumDate && date > maximumDate),
+          );
           return (
             <button
               key={date}
@@ -123,9 +144,12 @@ export function HistoryCalendar({
               aria-selected={selected}
               aria-current={date === today ? "date" : undefined}
               onClick={() => onSelectDate(date)}
+              disabled={outsideAllowedRange}
               className={cn(
                 "focus-visible:ring-primary relative grid aspect-square min-h-9 place-items-center rounded-xl text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:outline-none",
                 !isSameMonth(day, month) && "text-muted-foreground/40",
+                outsideAllowedRange &&
+                  "text-muted-foreground/30 cursor-not-allowed hover:bg-transparent",
                 date === today && "ring-primary text-primary ring-1",
                 selected && "bg-primary text-primary-foreground ring-0",
                 !selected && "hover:bg-secondary",

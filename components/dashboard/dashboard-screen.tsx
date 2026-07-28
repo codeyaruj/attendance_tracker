@@ -1,7 +1,7 @@
 "use client";
 
 import { addDays, endOfWeek, format, parseISO } from "date-fns";
-import { ArrowUpDown, LayoutDashboard } from "lucide-react";
+import { AlertTriangle, ArrowUpDown, LayoutDashboard } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -15,6 +15,7 @@ import {
   isoDateInTimeZone,
   resolveSnapshotSessionsForDate,
   type SubjectAttendanceView,
+  unmarkedHistoricalSessions,
 } from "@/components/attendance/attendance-view-model";
 import { DashboardSummary } from "@/components/dashboard/dashboard-summary";
 import { SubjectAttendanceCard } from "@/components/dashboard/subject-attendance-card";
@@ -137,6 +138,10 @@ export function DashboardScreen() {
     () => sortSubjectViews(subjectViews, sort),
     [sort, subjectViews],
   );
+  const unmarkedHistoricalCount = useMemo(
+    () => (data ? unmarkedHistoricalSessions(data, today).length : 0),
+    [data, today],
+  );
 
   if (loading || availability === "CHECKING") {
     return <AttendanceLoadingState label="Calculating subject attendance" />;
@@ -204,6 +209,29 @@ export function DashboardScreen() {
           cancellation and exemption policies.
         </p>
       </section>
+
+      {unmarkedHistoricalCount > 0 ? (
+        <div
+          role="status"
+          data-testid="projection-incomplete-warning"
+          className="border-warning/35 bg-warning/10 text-foreground flex flex-col gap-3 rounded-2xl border px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+        >
+          <span className="flex items-start gap-2">
+            <AlertTriangle
+              className="text-warning mt-0.5 size-4 shrink-0"
+              aria-hidden="true"
+            />
+            Attendance projections exclude {unmarkedHistoricalCount} unmarked
+            historical {unmarkedHistoricalCount === 1 ? "class" : "classes"}.
+          </span>
+          <Link
+            href="/history#backfill-attendance"
+            className="text-primary inline-flex min-h-11 shrink-0 items-center font-bold underline-offset-4 hover:underline"
+          >
+            Add attendance
+          </Link>
+        </div>
+      ) : null}
 
       <DashboardSummary
         values={{

@@ -1,27 +1,36 @@
 "use client";
 
 import { format, parseISO } from "date-fns";
-import { CalendarRange, CheckCircle2, History, XCircle } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarClock,
+  CalendarRange,
+  CheckCircle2,
+  History,
+  XCircle,
+} from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { ConfirmActionDialog } from "@/components/attendance/confirm-action-dialog";
+import type { ConfirmAction } from "@/components/attendance/confirm-action-dialog";
 import {
   AttendanceLoadingState,
   AttendanceUnavailableState,
 } from "@/components/attendance/data-state";
-import {
-  ensureResolvedSessionExists,
-  restoreResolvedSession,
-} from "@/components/attendance/session-persistence";
+import { RecentActionsCard } from "@/components/attendance/recent-actions-card";
 import {
   isoDateInTimeZone,
-  resolveSnapshotSessionsInRange,
+  resolveSnapshotHistoricalSessionsInRange,
+  toClassSession,
+  unmarkedHistoricalSessions,
 } from "@/components/attendance/attendance-view-model";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { attendSafeRepository } from "@/db";
+import { Field, Input } from "@/components/ui/form-controls";
+import { attendSafeRepository, type MarkAttendanceStatus } from "@/db";
 import { useAttendSafeData } from "@/hooks/use-attendsafe-data";
 
 import {
@@ -44,6 +53,41 @@ const initialFilters: HistoryFilterValues = {
   startDate: "",
   endDate: "",
 };
+
+type BackfillBulkStatus = Extract<
+  MarkAttendanceStatus,
+  "PRESENT" | "NOT_CONDUCTED" | "NOT_MARKED"
+>;
+
+function bulkConfirmation(
+  status: BackfillBulkStatus,
+  sessionCount: number,
+  overwriteCount: number,
+): ConfirmAction {
+  const overwriteWarning = overwriteCount
+    ? ` ${overwriteCount} already marked ${overwriteCount === 1 ? "class" : "classes"} will be replaced.`
+    : " No existing attendance marks will be replaced.";
+  switch (status) {
+    case "PRESENT":
+      return {
+        title: "Mark the whole day present?",
+        description: `${sessionCount} scheduled ${sessionCount === 1 ? "class" : "classes"} will be marked present.${overwriteWarning}`,
+        confirmLabel: "Mark whole day present",
+      };
+    case "NOT_CONDUCTED":
+      return {
+        title: "Mark the whole day not conducted?",
+        description: `${sessionCount} scheduled ${sessionCount === 1 ? "class" : "classes"} will be excluded from held-class totals.${overwriteWarning}`,
+        confirmLabel: "Mark whole day not conducted",
+      };
+    case "NOT_MARKED":
+      return {
+        title: "Leave the whole day unknown?",
+        description: `${sessionCount} scheduled ${sessionCount === 1 ? "class" : "classes"} will have no attendance mark and will not count as absent.${overwriteWarning}`,
+        confirmLabel: "Leave whole day unknown",
+      };
+  }
+}
 
 function matchesSearch(entry: HistoryEntry, query: string): boolean {
   if (!query.trim()) return true;
@@ -70,13 +114,18 @@ export function HistoryScreen() {
   const [month, setMonth] = useState(() => parseISO(today));
   const [editing, setEditing] = useState<HistoryEntry>();
   const [resetting, setResetting] = useState<HistoryEntry>();
+  const [backfillDate, setBackfillDate] = useState("");
+  const [bulkStatus, setBulkStatus] = useState<BackfillBulkStatus>();
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [undoingId, setUndoingId] = useState<string>();
+  const [incompleteDismissed, setIncompleteDismissed] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
 
   const sessions = useMemo(() => {
     const semester = data?.activeSemester;
     if (!data || !semester || today < semester.startDate) return [];
-    return resolveSnapshotSessionsInRange(
+    return resolveSnapshotHistoricalSessionsInRange(
       data,
       semester.startDate,
       today < semester.endDate ? today : semester.endDate,
@@ -112,6 +161,10 @@ export function HistoryScreen() {
         ),
     [entries, filters],
   );
+  const incompleteSessions = useMemo(
+    () => (data ? unmarkedHistoricalSessions(data, today) : []),
+    [data, today],
+  );
 
   if (loading || availability === "CHECKING") {
     return <AttendanceLoadingState label="Opening attendance history" />;
@@ -142,29 +195,62 @@ export function HistoryScreen() {
       />
     );
   }
+  if (today < data.activeSemester.startDate) {
+    return (
+      <EmptyState
+        icon={CalendarClock}
+        title="Historical attendance starts with your semester"
+        description={`Backfill will be available from ${format(parseISO(data.activeSemester.startDate), "d MMMM yyyy")}. Future attendance cannot be marked in advance.`}
+      />
+    );
+  }
+
+  const semester = data.activeSemester;
+  const maximumBackfillDate =
+    today < semester.endDate ? today : semester.endDate;
+  const effectiveBackfillDate =
+    backfillDate >= semester.startDate && backfillDate <= maximumBackfillDate
+      ? backfillDate
+      : maximumBackfillDate;
+  const backfillEntries = entries.filter(
+    (entry) => entry.session.date === effectiveBackfillDate,
+  );
+  const markableBackfillEntries = backfillEntries.filter(
+    (entry) => entry.isBackfillable,
+  );
+  const overwriteCount = markableBackfillEntries.filter(
+    (entry) => entry.wouldOverwriteExistingMark,
+  ).length;
 
   const saveEdit = async (values: EditAttendanceValues) => {
     if (!editing) return;
     setEditBusy(true);
     try {
-      await ensureResolvedSessionExists(editing.session);
-      if (
-        values.status !== "NOT_MARKED" &&
-        (editing.session.status === "CANCELLED" ||
-          editing.session.status === "NOT_CONDUCTED")
-      ) {
-        await restoreResolvedSession(
-          editing.session,
-          "Restored a class while correcting attendance",
-        );
+      if (editing.session.date > maximumBackfillDate) {
+        throw new Error("Future attendance cannot be changed.");
       }
-      await attendSafeRepository.markAttendance(
-        editing.session.id,
-        values.status,
-        values.notes.trim() || undefined,
+      await attendSafeRepository.backfillAttendance(
+        [
+          {
+            session: toClassSession(editing.session),
+            status: values.status,
+            ...(values.notes.trim() ? { notes: values.notes.trim() } : {}),
+          },
+        ],
+        maximumBackfillDate,
+        editing.isUnmarked
+          ? "Backfilled historical attendance"
+          : "Corrected historical attendance",
       );
       setEditing(undefined);
-      toast.success("Attendance correction saved");
+      toast.success(
+        values.status === "NOT_MARKED"
+          ? "Attendance left unknown"
+          : editing.isUnmarked
+            ? "Historical attendance saved"
+            : "Attendance correction saved",
+      );
+      await refresh();
     } catch (cause) {
       toast.error(
         cause instanceof Error
@@ -180,13 +266,19 @@ export function HistoryScreen() {
     if (!resetting) return;
     setResetBusy(true);
     try {
-      await ensureResolvedSessionExists(resetting.session);
-      await attendSafeRepository.markAttendance(
-        resetting.session.id,
-        "NOT_MARKED",
+      await attendSafeRepository.backfillAttendance(
+        [
+          {
+            session: toClassSession(resetting.session),
+            status: "NOT_MARKED",
+          },
+        ],
+        maximumBackfillDate,
+        "Left historical attendance unknown",
       );
       setResetting(undefined);
-      toast.success("Attendance record reset");
+      toast.success("Attendance left unknown");
+      await refresh();
     } catch (cause) {
       toast.error(
         cause instanceof Error
@@ -195,6 +287,57 @@ export function HistoryScreen() {
       );
     } finally {
       setResetBusy(false);
+    }
+  };
+
+  const runBulkBackfill = async () => {
+    if (!bulkStatus || markableBackfillEntries.length === 0) return;
+    setBulkBusy(true);
+    try {
+      const result = await attendSafeRepository.backfillAttendance(
+        markableBackfillEntries.map((entry) => ({
+          session: toClassSession(entry.session),
+          status: bulkStatus,
+        })),
+        maximumBackfillDate,
+        bulkStatus === "PRESENT"
+          ? "Marked a historical day present"
+          : bulkStatus === "NOT_CONDUCTED"
+            ? "Marked a historical day not conducted"
+            : "Left a historical day unknown",
+      );
+      setBulkStatus(undefined);
+      toast.success(
+        result.changedCount
+          ? `${result.changedCount} ${result.changedCount === 1 ? "class" : "classes"} updated`
+          : "The day was already in that state",
+      );
+      await refresh();
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error
+          ? cause.message
+          : "Historical attendance could not be updated.",
+      );
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const undoAction = async (action: { id: string }) => {
+    setUndoingId(action.id);
+    try {
+      await attendSafeRepository.undo(action.id);
+      toast.success("Change undone");
+      await refresh();
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error
+          ? cause.message
+          : "The change could not be undone.",
+      );
+    } finally {
+      setUndoingId(undefined);
     }
   };
 
@@ -234,6 +377,159 @@ export function HistoryScreen() {
         </Card>
       </section>
 
+      {incompleteSessions.length > 0 && !incompleteDismissed ? (
+        <section
+          className="border-warning/30 bg-warning-soft text-warning-strong rounded-2xl border p-4"
+          aria-labelledby="incomplete-attendance-title"
+          data-testid="incomplete-attendance-banner"
+        >
+          <div className="flex items-start gap-3">
+            <AlertTriangle
+              className="mt-0.5 size-5 shrink-0"
+              aria-hidden="true"
+            />
+            <div className="min-w-0 flex-1">
+              <h2 id="incomplete-attendance-title" className="font-extrabold">
+                Historical attendance is incomplete
+              </h2>
+              <p className="mt-1 text-sm leading-6">
+                {incompleteSessions.length} historical{" "}
+                {incompleteSessions.length === 1 ? "class is" : "classes are"}{" "}
+                still unmarked. Add attendance now or leave it unknown until you
+                confirm which classes were held.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    const date = incompleteSessions[0]?.date;
+                    if (date) {
+                      setBackfillDate(date);
+                      setMonth(parseISO(date));
+                      document
+                        .getElementById("backfill-attendance")
+                        ?.scrollIntoView({ block: "start" });
+                    }
+                  }}
+                >
+                  Add attendance
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIncompleteDismissed(true)}
+                >
+                  Dismiss for now
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <section id="backfill-attendance" aria-labelledby="backfill-title">
+        <Card className="p-4 sm:p-5" data-testid="backfill-attendance">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-2xl">
+              <p className="text-primary flex items-center gap-2 text-xs font-bold tracking-[0.14em] uppercase">
+                <CalendarClock className="size-4" aria-hidden="true" /> Backfill
+                attendance
+              </p>
+              <h2
+                id="backfill-title"
+                className="font-display mt-1 text-xl font-extrabold"
+              >
+                Add attendance for a past date
+              </h2>
+              <p className="text-muted-foreground mt-1 text-sm leading-6">
+                Opening a date does not save anything. Unknown classes remain
+                excluded from attendance totals.
+              </p>
+            </div>
+            <div className="w-full lg:w-56">
+              <Field label="Attendance date">
+                <Input
+                  type="date"
+                  min={semester.startDate}
+                  max={maximumBackfillDate}
+                  value={effectiveBackfillDate}
+                  onChange={(event) => {
+                    const date = event.target.value;
+                    if (
+                      date >= semester.startDate &&
+                      date <= maximumBackfillDate
+                    ) {
+                      setBackfillDate(date);
+                      setMonth(parseISO(date));
+                    }
+                  }}
+                  data-testid="backfill-date"
+                />
+              </Field>
+            </div>
+          </div>
+
+          <div
+            className="border-border mt-4 flex flex-wrap gap-2 border-t pt-4"
+            aria-label="Whole-day attendance actions"
+          >
+            <Button
+              size="sm"
+              onClick={() => setBulkStatus("PRESENT")}
+              disabled={markableBackfillEntries.length === 0 || bulkBusy}
+            >
+              Mark whole day present
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBulkStatus("NOT_CONDUCTED")}
+              disabled={markableBackfillEntries.length === 0 || bulkBusy}
+            >
+              Mark whole day not conducted
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setBulkStatus("NOT_MARKED")}
+              disabled={markableBackfillEntries.length === 0 || bulkBusy}
+            >
+              Leave whole day unknown
+            </Button>
+          </div>
+
+          <div className="mt-4">
+            <h3 className="font-bold">
+              {format(parseISO(effectiveBackfillDate), "EEEE, d MMMM yyyy")}
+            </h3>
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              {backfillEntries.length} scheduled{" "}
+              {backfillEntries.length === 1 ? "class" : "classes"}
+            </p>
+          </div>
+
+          {backfillEntries.length === 0 ? (
+            <div className="border-border text-muted-foreground mt-4 rounded-xl border border-dashed p-6 text-center text-sm">
+              No classes are scheduled on this date.
+            </div>
+          ) : (
+            <div
+              className="mt-4 grid gap-3 lg:grid-cols-2"
+              data-testid="backfill-session-list"
+            >
+              {backfillEntries.map((entry) => (
+                <HistoryEntryCard
+                  key={entry.id}
+                  entry={entry}
+                  onEdit={setEditing}
+                  onReset={setResetting}
+                />
+              ))}
+            </div>
+          )}
+        </Card>
+      </section>
+
       <div className="grid items-start gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
         <HistoryCalendar
           entries={entries}
@@ -241,6 +537,8 @@ export function HistoryScreen() {
           today={today}
           selectedStart={filters.startDate}
           selectedEnd={filters.endDate}
+          minimumDate={semester.startDate}
+          maximumDate={maximumBackfillDate}
           onMonthChange={setMonth}
           onSelectDate={(date) => {
             setFilters((current) => ({
@@ -249,6 +547,7 @@ export function HistoryScreen() {
               endDate: date,
             }));
             setMonth(parseISO(date));
+            setBackfillDate(date);
           }}
         />
         <HistoryFilters
@@ -307,6 +606,12 @@ export function HistoryScreen() {
         )}
       </section>
 
+      <RecentActionsCard
+        actions={data.recentActions}
+        undoingId={undoingId}
+        onUndo={undoAction}
+      />
+
       <EditAttendanceDialog
         entry={editing}
         busy={editBusy}
@@ -317,9 +622,9 @@ export function HistoryScreen() {
         action={
           resetting
             ? {
-                title: "Reset this attendance record?",
-                description: `${resetting.subject.name} on ${format(parseISO(resetting.session.date), "d MMMM yyyy")} will return to not marked.`,
-                confirmLabel: "Reset record",
+                title: "Leave this attendance unknown?",
+                description: `${resetting.subject.name} on ${format(parseISO(resetting.session.date), "d MMMM yyyy")} will be excluded from held and attended totals.`,
+                confirmLabel: "Leave unknown",
                 tone: "danger",
               }
             : undefined
@@ -327,6 +632,20 @@ export function HistoryScreen() {
         busy={resetBusy}
         onClose={() => setResetting(undefined)}
         onConfirm={resetRecord}
+      />
+      <ConfirmActionDialog
+        action={
+          bulkStatus
+            ? bulkConfirmation(
+                bulkStatus,
+                markableBackfillEntries.length,
+                overwriteCount,
+              )
+            : undefined
+        }
+        busy={bulkBusy}
+        onClose={() => setBulkStatus(undefined)}
+        onConfirm={runBulkBackfill}
       />
     </div>
   );

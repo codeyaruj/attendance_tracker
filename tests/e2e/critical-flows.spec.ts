@@ -826,6 +826,142 @@ test("a previous attendance record can be corrected from history", async ({
     .toBe("ABSENT");
 });
 
+test("historical attendance can be backfilled, corrected, reloaded, bulk-updated, and undone", async ({
+  page,
+}) => {
+  await loadDemo(page);
+  await expect(page.getByTestId("projection-incomplete-warning")).toBeVisible();
+  await page.goto("/history");
+  await expect(page.getByTestId("history-page")).toBeVisible();
+  await expect(page.getByTestId("incomplete-attendance-banner")).toBeVisible();
+
+  const dateInput = page.getByTestId("backfill-date");
+  await expect(dateInput).toHaveAttribute("max", "2026-07-23");
+  await dateInput.fill("2026-07-20");
+  const backfillCards = page
+    .getByTestId("backfill-session-list")
+    .locator('[data-testid^="history-entry-"]');
+  await expect(backfillCards.first()).toBeVisible();
+  const scheduledCount = await backfillCards.count();
+  expect(scheduledCount).toBeGreaterThan(0);
+  expect(await readStore(page, "attendanceRecords")).toHaveLength(0);
+  expect(await readStore(page, "classSessions")).toHaveLength(0);
+
+  const firstCard = backfillCards.first();
+  const markButton = firstCard.getByRole("button", {
+    name: "Mark attendance",
+  });
+  await scrollControlIntoSafeView(markButton);
+  await expectLocatorReceivesPointerEvents(markButton);
+  await markButton.click();
+  const backfillDialog = page.getByRole("dialog", {
+    name: "Backfill attendance",
+  });
+  await backfillDialog
+    .getByTestId("edit-attendance-status")
+    .selectOption("PRESENT");
+  await backfillDialog.getByTestId("save-history-edit").click();
+  await expect(page.getByText("Historical attendance saved")).toBeVisible();
+  await expect
+    .poll(async () => (await readStore(page, "attendanceRecords")).length)
+    .toBe(1);
+  expect(await readStore(page, "classSessions")).toHaveLength(1);
+
+  await page.reload();
+  await expect(page.getByTestId("history-page")).toBeVisible();
+  await page.getByTestId("backfill-date").fill("2026-07-20");
+  const reloadedFirstCard = page
+    .getByTestId("backfill-session-list")
+    .locator('[data-testid^="history-entry-"]')
+    .first();
+  await expect(reloadedFirstCard).toContainText("Present");
+  await reloadedFirstCard.getByRole("button", { name: "Edit" }).click();
+  const correctionDialog = page.getByRole("dialog", {
+    name: "Edit attendance",
+  });
+  await correctionDialog
+    .getByTestId("edit-attendance-status")
+    .selectOption("ABSENT");
+  await correctionDialog.getByTestId("save-history-edit").click();
+  await expect(page.getByText("Attendance correction saved")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const records = await readStore(page, "attendanceRecords");
+      return records[0]?.status;
+    })
+    .toBe("ABSENT");
+
+  const newestUndo = page
+    .getByTestId("recent-actions")
+    .getByRole("listitem")
+    .filter({ hasText: "Corrected historical attendance" })
+    .getByRole("button", { name: "Undo" });
+  await scrollControlIntoSafeView(newestUndo);
+  await newestUndo.click();
+  await expect(reloadedFirstCard).toContainText("Present");
+  await expect
+    .poll(async () => {
+      const records = await readStore(page, "attendanceRecords");
+      return records[0]?.status;
+    })
+    .toBe("PRESENT");
+
+  const originalUndo = page
+    .getByTestId("recent-actions")
+    .getByRole("listitem")
+    .filter({ hasText: "Backfilled historical attendance" })
+    .getByRole("button", { name: "Undo" });
+  await originalUndo.click();
+  await expect
+    .poll(async () => (await readStore(page, "attendanceRecords")).length)
+    .toBe(0);
+  await expect
+    .poll(async () => (await readStore(page, "classSessions")).length)
+    .toBe(0);
+
+  const wholeDayPresent = page.getByRole("button", {
+    name: "Mark whole day present",
+  });
+  await scrollControlIntoSafeView(wholeDayPresent);
+  await expectLocatorReceivesPointerEvents(wholeDayPresent);
+  await wholeDayPresent.click();
+  const presentConfirmation = page.getByRole("dialog", {
+    name: "Mark the whole day present?",
+  });
+  await expect(presentConfirmation).toContainText(
+    "No existing attendance marks will be replaced",
+  );
+  await presentConfirmation.getByTestId("confirm-action").click();
+  await expect
+    .poll(async () => (await readStore(page, "attendanceRecords")).length)
+    .toBe(scheduledCount);
+
+  await page.reload();
+  await page.getByTestId("backfill-date").fill("2026-07-20");
+  await expect(
+    page
+      .getByTestId("backfill-session-list")
+      .locator('[data-testid^="history-entry-"]')
+      .filter({ hasText: "Present" }),
+  ).toHaveCount(scheduledCount);
+
+  const leaveUnknown = page.getByRole("button", {
+    name: "Leave whole day unknown",
+  });
+  await scrollControlIntoSafeView(leaveUnknown);
+  await leaveUnknown.click();
+  const unknownConfirmation = page.getByRole("dialog", {
+    name: "Leave the whole day unknown?",
+  });
+  await expect(unknownConfirmation).toContainText(
+    `${scheduledCount} already marked`,
+  );
+  await unknownConfirmation.getByTestId("confirm-action").click();
+  await expect
+    .poll(async () => (await readStore(page, "attendanceRecords")).length)
+    .toBe(0);
+});
+
 test("changing the semester threshold recalculates dashboard risk", async ({
   page,
 }) => {

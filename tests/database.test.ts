@@ -6,7 +6,11 @@ import type { ClassSession, Subject } from "@/types/domain";
 
 import { AttendSafeDatabase, checkDatabaseHealth } from "@/db/database";
 import { AttendSafeRepository } from "@/db/index";
-import { markAttendanceWithUndo, undoRecentAction } from "@/db/recent-actions";
+import {
+  applyHistoricalAttendanceWithUndo,
+  markAttendanceWithUndo,
+  undoRecentAction,
+} from "@/db/recent-actions";
 import { createRepositories } from "@/db/repositories";
 import { SCHEMA_V1, SCHEMA_V3 } from "@/db/schema";
 import {
@@ -346,6 +350,160 @@ describe("AttendSafeDatabase", () => {
     expect(
       (await repositories.recentActions.get(actions[0]!.id))?.undoneAt,
     ).toBeTruthy();
+  });
+
+  it("materialises a historical class and mark atomically, then undoes both", async () => {
+    const database = createDatabase();
+    const { profile, semester } = await createProfileSetup(database, {
+      profile: { displayName: "Asha" },
+      semester: {
+        name: "Semester 5",
+        startDate: "2026-07-01",
+        endDate: "2026-12-15",
+      },
+    });
+    const subject = subjectFixture(semester.id);
+    const session = {
+      ...sessionFixture(semester.id, subject.id),
+      date: "2026-07-20",
+    };
+    await database.subjects.add(subject);
+
+    const result = await applyHistoricalAttendanceWithUndo(
+      database,
+      [{ session, status: "PRESENT", notes: "Backfilled from register" }],
+      { maximumDate: "2026-07-23" },
+    );
+
+    expect(result.changedCount).toBe(1);
+    expect(await database.classSessions.get(session.id)).toMatchObject({
+      id: session.id,
+      status: "SCHEDULED",
+    });
+    expect(
+      await database.attendanceRecords
+        .where("classSessionId")
+        .equals(session.id)
+        .first(),
+    ).toMatchObject({
+      status: "PRESENT",
+      notes: "Backfilled from register",
+    });
+    const actions = await database.recentActions
+      .where("profileId")
+      .equals(profile.id)
+      .toArray();
+    expect(actions).toHaveLength(1);
+
+    await undoRecentAction(database, actions[0]!.id);
+    expect(await database.classSessions.get(session.id)).toBeUndefined();
+    expect(
+      await database.attendanceRecords
+        .where("classSessionId")
+        .equals(session.id)
+        .count(),
+    ).toBe(0);
+  });
+
+  it("supports correction, unknown removal, exceptional states, and duplicate-tap no-ops", async () => {
+    const database = createDatabase();
+    const { semester } = await createProfileSetup(database, {
+      profile: { displayName: "Asha" },
+      semester: {
+        name: "Semester 5",
+        startDate: "2026-07-01",
+        endDate: "2026-12-15",
+      },
+    });
+    const subject = subjectFixture(semester.id);
+    const session = {
+      ...sessionFixture(semester.id, subject.id),
+      date: "2026-07-20",
+    };
+    await database.subjects.add(subject);
+
+    await applyHistoricalAttendanceWithUndo(
+      database,
+      [{ session, status: "ABSENT" }],
+      { maximumDate: "2026-07-23" },
+    );
+    const duplicate = await applyHistoricalAttendanceWithUndo(
+      database,
+      [{ session, status: "ABSENT" }],
+      { maximumDate: "2026-07-23" },
+    );
+    expect(duplicate.changedCount).toBe(0);
+    expect(await database.recentActions.count()).toBe(1);
+
+    await applyHistoricalAttendanceWithUndo(
+      database,
+      [{ session, status: "NOT_CONDUCTED" }],
+      { maximumDate: "2026-07-23" },
+    );
+    expect(await database.classSessions.get(session.id)).toMatchObject({
+      status: "NOT_CONDUCTED",
+    });
+    expect(await database.attendanceRecords.count()).toBe(0);
+
+    await applyHistoricalAttendanceWithUndo(
+      database,
+      [{ session, status: "NOT_MARKED" }],
+      { maximumDate: "2026-07-23" },
+    );
+    expect(await database.classSessions.get(session.id)).toMatchObject({
+      status: "SCHEDULED",
+    });
+    expect(await database.attendanceRecords.count()).toBe(0);
+  });
+
+  it("applies a whole historical day as one action and rejects future attendance", async () => {
+    const database = createDatabase();
+    const { semester } = await createProfileSetup(database, {
+      profile: { displayName: "Asha" },
+      semester: {
+        name: "Semester 5",
+        startDate: "2026-07-01",
+        endDate: "2026-12-15",
+      },
+    });
+    const subject = subjectFixture(semester.id);
+    const first = {
+      ...sessionFixture(semester.id, subject.id),
+      date: "2026-07-20",
+    };
+    const second = {
+      ...sessionFixture(semester.id, subject.id),
+      date: "2026-07-20",
+      startTime: "10:00",
+      endTime: "11:00",
+    };
+    await database.subjects.add(subject);
+
+    const result = await applyHistoricalAttendanceWithUndo(
+      database,
+      [
+        { session: first, status: "PRESENT" },
+        { session: second, status: "PRESENT" },
+      ],
+      { maximumDate: "2026-07-23", description: "Marked a day present" },
+    );
+    expect(result.changedCount).toBe(2);
+    expect(await database.classSessions.count()).toBe(2);
+    expect(await database.attendanceRecords.count()).toBe(2);
+    expect(await database.recentActions.count()).toBe(1);
+
+    await expect(
+      applyHistoricalAttendanceWithUndo(
+        database,
+        [
+          {
+            session: { ...first, id: crypto.randomUUID(), date: "2026-07-24" },
+            status: "PRESENT",
+          },
+        ],
+        { maximumDate: "2026-07-23" },
+      ),
+    ).rejects.toThrow("Future attendance");
   });
 
   it("preserves cancellation notes on the dated class session", async () => {

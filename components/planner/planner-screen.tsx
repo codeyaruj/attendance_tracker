@@ -1,6 +1,12 @@
 "use client";
 
-import { CalendarRange, ListChecks, ShieldCheck, Sparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarRange,
+  ListChecks,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -10,6 +16,7 @@ import {
   currentAttendanceSessions,
   isoDateInTimeZone,
   resolveSnapshotSessionsInRange,
+  unmarkedHistoricalSessions,
 } from "@/components/attendance/attendance-view-model";
 import {
   AttendanceLoadingState,
@@ -147,6 +154,10 @@ export function PlannerScreen() {
       data
         ? buildSubjectViews(data, currentAttendanceSessions(data, today))
         : [],
+    [data, today],
+  );
+  const unmarkedHistoricalCount = useMemo(
+    () => (data ? unmarkedHistoricalSessions(data, today).length : 0),
     [data, today],
   );
   const summaries = useMemo(
@@ -367,6 +378,29 @@ export function PlannerScreen() {
           </dl>
         </div>
       </section>
+
+      {unmarkedHistoricalCount > 0 ? (
+        <div
+          role="status"
+          data-testid="projection-incomplete-warning"
+          className="border-warning/35 bg-warning/10 text-foreground flex flex-col gap-3 rounded-2xl border px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+        >
+          <span className="flex items-start gap-2">
+            <AlertTriangle
+              className="text-warning mt-0.5 size-4 shrink-0"
+              aria-hidden="true"
+            />
+            Planner projections exclude {unmarkedHistoricalCount} unmarked
+            historical {unmarkedHistoricalCount === 1 ? "class" : "classes"}.
+          </span>
+          <Link
+            href="/history#backfill-attendance"
+            className="text-primary inline-flex min-h-11 shrink-0 items-center font-bold underline-offset-4 hover:underline"
+          >
+            Add attendance
+          </Link>
+        </div>
+      ) : null}
 
       <PlannerModeTabs value={mode} onChange={setMode} />
 

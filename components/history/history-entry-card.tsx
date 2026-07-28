@@ -36,6 +36,9 @@ function statusTone(status: HistoryStatus): BadgeTone {
 }
 
 function auditMessage(entry: HistoryEntry): string {
+  if (entry.status === "NOT_MARKED") {
+    return "Attendance is unknown and excluded from held and attended totals.";
+  }
   if (
     entry.status === "CANCELLED" ||
     entry.status === "HOLIDAY" ||
@@ -111,7 +114,7 @@ export function HistoryEntryCard({
             </p>
           ) : null}
 
-          {entry.record ? (
+          {entry.isBackfillable ? (
             <div className="mt-3 flex flex-wrap justify-end gap-2">
               <Button
                 variant="ghost"
@@ -119,16 +122,20 @@ export function HistoryEntryCard({
                 onClick={() => onEdit(entry)}
                 data-testid={`edit-history-${entry.id}`}
               >
-                <Pencil className="size-4" aria-hidden="true" /> Edit
+                <Pencil className="size-4" aria-hidden="true" />
+                {entry.isUnmarked ? "Mark attendance" : "Edit"}
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onReset(entry)}
-                data-testid={`reset-history-${entry.id}`}
-              >
-                <RotateCcw className="size-4" aria-hidden="true" /> Reset
-              </Button>
+              {!entry.isUnmarked ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onReset(entry)}
+                  data-testid={`reset-history-${entry.id}`}
+                >
+                  <RotateCcw className="size-4" aria-hidden="true" /> Leave
+                  unknown
+                </Button>
+              ) : null}
             </div>
           ) : null}
         </div>

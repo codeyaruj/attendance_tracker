@@ -16,6 +16,7 @@ export interface TimetableFilterOptions {
   trackedClassTypes?: Partial<Record<ClassType, boolean>>;
   includeZeroCredit?: boolean;
   includeDisabled?: boolean;
+  includeMissingSubjects?: boolean;
   includePlaceholders?: boolean;
   includeBreaks?: boolean;
 }
@@ -38,6 +39,7 @@ export function filterTimetableSlots({
   trackedClassTypes,
   includeZeroCredit = true,
   includeDisabled = false,
+  includeMissingSubjects = false,
   includePlaceholders = false,
   includeBreaks = false,
 }: TimetableFilterOptions): TimetableSlot[] {
@@ -62,10 +64,12 @@ export function filterTimetableSlots({
     if (!slot.subjectId) return false;
 
     const subject = subjectsById.get(slot.subjectId);
-    if (!subject) return false;
-    if (!includeDisabled && !subject.isEnabled) return false;
-    if (!includeZeroCredit && subject.isZeroCredit) return false;
-    if (trackedClassTypes?.[subject.classType] === false) return false;
+    if (!subject && !includeMissingSubjects) return false;
+    if (subject) {
+      if (!includeDisabled && !subject.isEnabled) return false;
+      if (!includeZeroCredit && subject.isZeroCredit) return false;
+      if (trackedClassTypes?.[subject.classType] === false) return false;
+    }
 
     if (slot.batchRestriction.length > 0) {
       if (normalizedBatches.size === 0) return false;
@@ -78,7 +82,7 @@ export function filterTimetableSlots({
       }
     }
 
-    if (slot.electiveGroupId && !selectedElectives.has(subject.id))
+    if (subject && slot.electiveGroupId && !selectedElectives.has(subject.id))
       return false;
     return true;
   });

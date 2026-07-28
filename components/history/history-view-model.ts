@@ -25,6 +25,29 @@ export interface HistoryEntry {
   beforeBasisPoints: number | null;
   afterBasisPoints: number | null;
   isActivity: boolean;
+  isUnmarked: boolean;
+  isBackfillable: boolean;
+  wouldOverwriteExistingMark: boolean;
+}
+
+function archivedSubject(session: ResolvedSession): Subject {
+  const timestamp = `${session.date}T00:00:00.000Z`;
+  return {
+    id: session.subjectId,
+    semesterId: session.semesterId,
+    name: "Archived subject",
+    shortName: "Archived",
+    credits: 0,
+    classType: "OTHER",
+    isZeroCredit: false,
+    isEnabled: false,
+    countsCancelledSessions: false,
+    exemptPolicy: "EXCLUDED",
+    initialHeld: 0,
+    initialAttended: 0,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
 }
 
 function effectiveStatus(
@@ -90,9 +113,12 @@ export function buildHistoryEntries(
         left.id.localeCompare(right.id),
     )
     .flatMap((session) => {
-      const subject = subjects.get(session.subjectId);
-      const total = totals.get(session.subjectId);
-      if (!subject || !total) return [];
+      const subject =
+        subjects.get(session.subjectId) ?? archivedSubject(session);
+      const total = totals.get(session.subjectId) ?? { attended: 0, held: 0 };
+      if (!totals.has(session.subjectId)) {
+        totals.set(session.subjectId, total);
+      }
       const record = records.get(session.id);
       const beforeBasisPoints = calculateAttendance(total.attended, total.held);
       const delta = countSessionAttendance(
@@ -106,19 +132,26 @@ export function buildHistoryEntries(
       total.attended += delta.attended;
       total.held += delta.held;
       const afterBasisPoints = calculateAttendance(total.attended, total.held);
+      const status = effectiveStatus(session, record);
       return [
         {
           id: session.id,
           session,
           subject,
           ...(record ? { record } : {}),
-          status: effectiveStatus(session, record),
+          status,
           beforeBasisPoints,
           afterBasisPoints,
           isActivity:
             Boolean(record) ||
             isExceptionalStatus(session.status) ||
             session.source !== "TIMETABLE",
+          isUnmarked: status === "NOT_MARKED",
+          isBackfillable: status !== "HOLIDAY",
+          wouldOverwriteExistingMark:
+            Boolean(record && record.status !== "NOT_MARKED") ||
+            status === "CANCELLED" ||
+            status === "NOT_CONDUCTED",
         } satisfies HistoryEntry,
       ];
     });

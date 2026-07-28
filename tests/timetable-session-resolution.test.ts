@@ -295,4 +295,81 @@ describe("academic exception-aware lazy session resolution", () => {
       sessions.filter((session) => session.subjectId === DEMO_IDS.dsp),
     ).toHaveLength(2);
   });
+
+  it("resolves historical versions while retaining disabled and archived subjects", () => {
+    const { demo, input } = context();
+    const oldSlot = demo.timetableSlots.find(
+      (slot) => slot.subjectId === DEMO_IDS.dsp && slot.dayOfWeek === "MONDAY",
+    )!;
+    const oldVersion = {
+      ...demo.timetableVersion,
+      effectiveEndDate: "2026-07-12",
+    };
+    const newVersion = {
+      ...demo.timetableVersion,
+      id: "00000000-0000-4000-8000-000000000099",
+      version: 2,
+      label: "Revised timetable",
+      effectiveStartDate: "2026-07-13",
+    };
+    const newSlot: TimetableSlot = {
+      ...oldSlot,
+      id: "00000000-0000-4000-8000-000000000098",
+      timetableVersionId: newVersion.id,
+      startTime: "16:00",
+      endTime: "17:00",
+    };
+    const subjects = demo.subjects.map((subject) =>
+      subject.id === DEMO_IDS.dsp ? { ...subject, isEnabled: false } : subject,
+    );
+    const historicalInput = {
+      ...input,
+      subjects,
+      timetableVersions: [oldVersion, newVersion],
+      slots: [...demo.timetableSlots, newSlot],
+      includeDisabled: true,
+      includeMissingSubjects: true,
+    };
+
+    const oldSession = resolveSessionsForDate({
+      ...historicalInput,
+      date: "2026-07-06",
+    }).find((candidate) => candidate.subjectId === DEMO_IDS.dsp);
+    const revisedSession = resolveSessionsForDate({
+      ...historicalInput,
+      date: "2026-07-13",
+    }).find((candidate) => candidate.subjectId === DEMO_IDS.dsp);
+
+    expect(oldSession).toMatchObject({
+      timetableVersionId: oldVersion.id,
+      startTime: oldSlot.startTime,
+    });
+    expect(revisedSession).toMatchObject({
+      timetableVersionId: newVersion.id,
+      startTime: "16:00",
+    });
+    expect(
+      resolveSessionsForDate({
+        ...historicalInput,
+        includeDisabled: false,
+        date: "2026-07-13",
+      }).some((candidate) => candidate.subjectId === DEMO_IDS.dsp),
+    ).toBe(false);
+
+    const archivedSubjectId = "00000000-0000-4000-8000-000000000097";
+    const archivedSlot: TimetableSlot = {
+      ...newSlot,
+      id: "00000000-0000-4000-8000-000000000096",
+      subjectId: archivedSubjectId,
+      startTime: "17:00",
+      endTime: "18:00",
+    };
+    expect(
+      resolveSessionsForDate({
+        ...historicalInput,
+        slots: [...historicalInput.slots, archivedSlot],
+        date: "2026-07-13",
+      }).some((candidate) => candidate.subjectId === archivedSubjectId),
+    ).toBe(true);
+  });
 });

@@ -215,6 +215,33 @@ describe("core attendance pages", () => {
     );
   });
 
+  it("shows an unmarked scheduled class without counting it or writing on open", () => {
+    const onEdit = vi.fn();
+    const entries = buildHistoryEntries(snapshot(), [session]);
+
+    expect(entries[0]).toMatchObject({
+      status: "NOT_MARKED",
+      beforeBasisPoints: 7500,
+      afterBasisPoints: 7500,
+      isBackfillable: true,
+    });
+    render(
+      <HistoryEntryCard
+        entry={entries[0]!}
+        onEdit={onEdit}
+        onReset={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Not marked")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Attendance is unknown and excluded from held and attended totals.",
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Mark attendance" }));
+    expect(onEdit).toHaveBeenCalledWith(entries[0]);
+  });
+
   it("uses the calendar as a date filter control", () => {
     const onSelectDate = vi.fn();
     render(
@@ -231,5 +258,27 @@ describe("core attendance pages", () => {
 
     fireEvent.click(screen.getByTestId("calendar-day-2026-07-23"));
     expect(onSelectDate).toHaveBeenCalledWith("2026-07-23");
+  });
+
+  it("prevents selecting dates after the local maximum backfill date", () => {
+    const onSelectDate = vi.fn();
+    render(
+      <HistoryCalendar
+        entries={[]}
+        month={new Date("2026-07-15T12:00:00")}
+        today="2026-07-23"
+        selectedStart=""
+        selectedEnd=""
+        minimumDate="2026-07-01"
+        maximumDate="2026-07-23"
+        onMonthChange={vi.fn()}
+        onSelectDate={onSelectDate}
+      />,
+    );
+
+    expect(screen.getByTestId("calendar-day-2026-07-24")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("calendar-day-2026-07-24"));
+    expect(onSelectDate).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Next month" })).toBeDisabled();
   });
 });

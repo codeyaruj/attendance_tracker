@@ -6,12 +6,12 @@ import { useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Select, Textarea } from "@/components/ui/form-controls";
-import type { AttendanceStatus } from "@/types/domain";
+import type { MarkAttendanceStatus } from "@/db";
 
 import type { HistoryEntry } from "./history-view-model";
 
 export interface EditAttendanceValues {
-  status: AttendanceStatus;
+  status: MarkAttendanceStatus;
   notes: string;
 }
 
@@ -32,9 +32,17 @@ export function EditAttendanceDialog({
 
   useEffect(() => {
     if (!entry) return;
+    const editableStatus: MarkAttendanceStatus =
+      entry.status === "PRESENT" ||
+      entry.status === "ABSENT" ||
+      entry.status === "EXEMPT" ||
+      entry.status === "CANCELLED" ||
+      entry.status === "NOT_CONDUCTED"
+        ? entry.status
+        : "NOT_MARKED";
     reset({
-      status: entry.record?.status ?? "NOT_MARKED",
-      notes: entry.record?.notes ?? "",
+      status: editableStatus,
+      notes: entry.record?.notes ?? entry.session.notes ?? "",
     });
   }, [entry, reset]);
 
@@ -42,7 +50,7 @@ export function EditAttendanceDialog({
     <Dialog
       open={Boolean(entry)}
       onClose={busy ? () => undefined : onClose}
-      title="Edit attendance"
+      title={entry?.isUnmarked ? "Backfill attendance" : "Edit attendance"}
       description={
         entry ? `${entry.subject.name} · ${entry.session.date}` : undefined
       }
@@ -51,12 +59,17 @@ export function EditAttendanceDialog({
         className="grid gap-4"
         onSubmit={handleSubmit((values) => void onSave(values))}
       >
-        <Field label="Attendance status">
+        <Field
+          label="Attendance status"
+          hint="Unknown is not an absence. Cancelled and not conducted are excluded from held-class totals."
+        >
           <Select {...register("status")} data-testid="edit-attendance-status">
             <option value="PRESENT">Present</option>
             <option value="ABSENT">Absent</option>
             <option value="EXEMPT">Exempt</option>
-            <option value="NOT_MARKED">Not marked</option>
+            <option value="NOT_CONDUCTED">Not conducted</option>
+            <option value="CANCELLED">Cancelled</option>
+            <option value="NOT_MARKED">Not marked / Leave unknown</option>
           </Select>
         </Field>
         <Field label="Note" hint="Optional context for this correction.">
