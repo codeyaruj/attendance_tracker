@@ -125,19 +125,108 @@ async function expectControlReceivesPointerEvents(
   testId: string,
 ): Promise<void> {
   const control = page.getByTestId(testId);
+  await expect(control).toBeVisible();
+  await expect(control).toBeEnabled();
   await expect(control).toBeInViewport();
-  await expect
-    .poll(() =>
-      control.evaluate((element) => {
-        const rect = element.getBoundingClientRect();
-        const hit = document.elementFromPoint(
-          rect.left + rect.width / 2,
-          rect.top + rect.height / 2,
-        );
-        return hit === element || Boolean(hit && element.contains(hit));
-      }),
-    )
-    .toBe(true);
+  try {
+    await expect
+      .poll(() =>
+        control.evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          const hit = document.elementFromPoint(
+            rect.left + rect.width / 2,
+            rect.top + rect.height / 2,
+          );
+          return hit === element || Boolean(hit && element.contains(hit));
+        }),
+      )
+      .toBe(true);
+  } catch (cause) {
+    const diagnostics = await control.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const point = {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+      const describe = (candidate: Element | null) =>
+        candidate
+          ? {
+              tag: candidate.tagName.toLowerCase(),
+              className: candidate.getAttribute("class"),
+              ariaLabel: candidate.getAttribute("aria-label"),
+              text: candidate.textContent?.trim().slice(0, 160) ?? "",
+            }
+          : null;
+      return {
+        target: {
+          ...describe(element),
+          disabled:
+            element instanceof HTMLButtonElement ||
+            element instanceof HTMLInputElement
+              ? element.disabled
+              : element.getAttribute("aria-disabled"),
+          rectangle: {
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+            left: rect.left,
+            width: rect.width,
+            height: rect.height,
+          },
+        },
+        hit: describe(document.elementFromPoint(point.x, point.y)),
+        elementsFromPoint: document
+          .elementsFromPoint(point.x, point.y)
+          .slice(0, 8)
+          .map(describe),
+      };
+    });
+    throw new Error(
+      `Control ${testId} did not receive pointer events. Diagnostics: ${JSON.stringify(diagnostics)}`,
+      { cause },
+    );
+  }
+}
+
+type InAppNavigationLabel =
+  "Today" | "Dashboard" | "Timetable" | "Skip" | "Settings";
+
+async function navigateInApp(
+  page: Page,
+  label: InAppNavigationLabel,
+): Promise<void> {
+  const desktopLabel = label === "Skip" ? "Skip Planner" : label;
+  const desktopLink = page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("link", { name: desktopLabel, exact: true });
+  const mobileLink = page
+    .getByRole("navigation", { name: "Bottom navigation" })
+    .getByRole("link", { name: label, exact: true });
+
+  if (await desktopLink.isVisible().catch(() => false)) {
+    await desktopLink.click();
+    return;
+  }
+
+  await expect(mobileLink).toBeVisible();
+  const coveredByDevelopmentOverlay = await mobileLink.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return document
+      .elementsFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+      .some((candidate) => candidate.tagName.toLowerCase() === "nextjs-portal");
+  });
+  if (coveredByDevelopmentOverlay) {
+    const menuButton = page.getByRole("button", { name: "Open menu" });
+    await expect(menuButton).toBeVisible();
+    await menuButton.click();
+    const menuLink = page
+      .getByRole("navigation", { name: "Mobile menu" })
+      .getByRole("link", { name: desktopLabel, exact: true });
+    await expect(menuLink).toBeVisible();
+    await menuLink.click();
+    return;
+  }
+  await mobileLink.click();
 }
 
 async function dispatchDeferredInstallPrompt(page: Page): Promise<void> {
@@ -190,25 +279,51 @@ test("manual timetable creation supports attendance marking and dashboard review
   await advanceTimetableConfirmation(page);
   await expect(page.getByLabel("Application notice")).toHaveCount(0);
   await expectControlReceivesPointerEvents(page, "confirm-timetable");
+  await page.evaluate(() => {
+    const testWindow = window as typeof window & {
+      __onboardingNoticeTracker?: {
+        appeared: boolean;
+        observer: MutationObserver;
+      };
+    };
+    const observer = new MutationObserver(() => {
+      if (
+        window.location.pathname === "/" &&
+        document.querySelector('[aria-label="Application notice"]')
+      ) {
+        testWindow.__onboardingNoticeTracker!.appeared = true;
+      }
+    });
+    testWindow.__onboardingNoticeTracker = { appeared: false, observer };
+    observer.observe(document.body, { childList: true, subtree: true });
+  });
   await page.getByTestId("confirm-timetable").click();
 
   await expect(page).toHaveURL(/\/today\/?$/);
   await expect(page.getByTestId("today-page")).toBeVisible();
+  expect(
+    await page.evaluate(() => {
+      const testWindow = window as typeof window & {
+        __onboardingNoticeTracker?: {
+          appeared: boolean;
+          observer: MutationObserver;
+        };
+      };
+      const appeared = testWindow.__onboardingNoticeTracker?.appeared ?? false;
+      testWindow.__onboardingNoticeTracker?.observer.disconnect();
+      delete testWindow.__onboardingNoticeTracker;
+      return appeared;
+    }),
+  ).toBe(false);
   await expect(page.getByLabel("Application notice")).toBeVisible();
-  await page
-    .getByRole("navigation", { name: "Primary navigation" })
-    .getByRole("link", { name: "Settings", exact: true })
-    .click();
+  await navigateInApp(page, "Settings");
   await expect(page.getByTestId("settings-page")).toBeVisible();
   await expect(
     page
       .getByTestId("settings-page")
       .getByRole("button", { name: "Install App", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("navigation", { name: "Primary navigation" })
-    .getByRole("link", { name: "Today", exact: true })
-    .click();
+  await navigateInApp(page, "Today");
   await expect(page.getByTestId("today-page")).toBeVisible();
   await markFirstClassPresent(page);
   await page.goto("/dashboard");

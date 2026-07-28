@@ -8,12 +8,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { attendSafeRepository } from "@/db";
 import { useAppInstall } from "@/hooks/use-app-install";
-import { useAttendSafeData } from "@/hooks/use-attendsafe-data";
 import { criticalOperationActive } from "@/lib/pwa/critical-operation";
 
 export function PwaLifecycle() {
   const pathname = usePathname();
-  const { data } = useAttendSafeData();
   const [waiting, setWaiting] = useState<ServiceWorker>();
   const {
     method,
@@ -88,7 +86,7 @@ export function PwaLifecycle() {
     waiting.postMessage({ type: "SKIP_WAITING" });
   };
 
-  const onboardingActive = pathname === "/" && !data?.activeProfile;
+  const onboardingActive = pathname === "/";
   const showInstall =
     method === "NATIVE" && !promotionalDismissed && !onboardingActive;
   const showUpdate = Boolean(waiting) && !onboardingActive;

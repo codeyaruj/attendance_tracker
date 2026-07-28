@@ -636,7 +636,7 @@ export function TimetableConfirmation({
             </Card>
           </div>
 
-          <div className="border-border bg-background/95 sticky bottom-0 -mx-4 flex flex-col-reverse gap-2 border-t px-4 py-3 backdrop-blur sm:mx-0 sm:flex-row sm:items-center sm:justify-between sm:rounded-2xl sm:border">
+          <div className="border-border bg-background/95 sticky bottom-0 z-20 -mx-4 flex flex-col-reverse gap-2 border-t px-4 py-3 backdrop-blur sm:mx-0 sm:flex-row sm:items-center sm:justify-between sm:rounded-2xl sm:border">
             <Button variant="ghost" onClick={onBack}>
               <ArrowLeft className="size-4" /> Back
             </Button>
@@ -706,7 +706,7 @@ export function TimetableConfirmation({
             />
           </Card>
 
-          <div className="border-border bg-background/95 sticky bottom-0 -mx-4 flex flex-col-reverse gap-2 border-t px-4 py-3 backdrop-blur sm:mx-0 sm:flex-row sm:items-center sm:justify-between sm:rounded-2xl sm:border">
+          <div className="border-border bg-background/95 sticky bottom-0 z-20 -mx-4 flex flex-col-reverse gap-2 border-t px-4 py-3 backdrop-blur sm:mx-0 sm:flex-row sm:items-center sm:justify-between sm:rounded-2xl sm:border">
             <Button variant="ghost" onClick={backToSelection} disabled={saving}>
               <ArrowLeft className="size-4" /> Back to class selection
             </Button>
