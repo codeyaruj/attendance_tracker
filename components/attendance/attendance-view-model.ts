@@ -61,6 +61,7 @@ function resolutionContext(snapshot: AttendSafeSnapshot) {
     persistedSessions: snapshot.classSessions,
     attendanceRecords: snapshot.attendanceRecords,
     selectedBatch: snapshot.settings.selectedBatch,
+    selectedBatches: snapshot.settings.selectedBatches,
     trackedClassTypes: snapshot.settings.trackedClassTypes,
     includeZeroCredit: snapshot.settings.includeZeroCredit ?? false,
     weekStartsOn: snapshot.activeProfile?.weekStartsOn,

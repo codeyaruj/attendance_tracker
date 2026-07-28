@@ -192,7 +192,11 @@ describe("AttendSafeDatabase", () => {
   it("creates a profile and semester atomically with active settings", async () => {
     const database = createDatabase();
     const setup = await createProfileSetup(database, {
-      profile: { displayName: "  Asha  ", batch: "B1" },
+      profile: {
+        displayName: "  Asha  ",
+        batch: "C4",
+        batches: ["C4", "G1"],
+      },
       semester: {
         name: "Semester 5",
         startDate: "2026-07-01",
@@ -202,13 +206,18 @@ describe("AttendSafeDatabase", () => {
       },
     });
 
-    expect(setup.profile.displayName).toBe("Asha");
+    expect(setup.profile).toMatchObject({
+      displayName: "Asha",
+      batch: "C4",
+      batches: ["C4", "G1"],
+    });
     expect(await database.profiles.count()).toBe(1);
     expect(await database.semesters.count()).toBe(1);
     expect(await database.appSettings.get("app")).toMatchObject({
       activeProfileId: setup.profile.id,
       activeSemesterId: setup.semester.id,
-      selectedBatch: "B1",
+      selectedBatch: "C4",
+      selectedBatches: ["C4", "G1"],
     });
   });
 
@@ -432,6 +441,7 @@ describe("AttendSafeDatabase", () => {
       activeProfileId: undefined,
       activeSemesterId: undefined,
       selectedBatch: undefined,
+      selectedBatches: undefined,
     });
   });
 

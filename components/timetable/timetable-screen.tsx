@@ -415,6 +415,7 @@ export function TimetableScreen() {
       subjects: data.subjects,
       electiveGroups: data.electiveGroups,
       selectedBatch: data.settings.selectedBatch,
+      selectedBatches: data.settings.selectedBatches,
       trackedClassTypes: data.settings.trackedClassTypes,
       includeZeroCredit: data.settings.includeZeroCredit ?? false,
       includePlaceholders: true,

@@ -103,6 +103,8 @@ export function ProfileSemesterSettings({
       activeProfileId: profileId,
       activeSemesterId: semesters.at(-1)?.id,
       selectedBatch: selected.batch,
+      selectedBatches:
+        selected.batches ?? (selected.batch ? [selected.batch] : []),
     });
     toast.success(`Switched to ${selected.displayName}`);
   };
@@ -121,18 +123,27 @@ export function ProfileSemesterSettings({
     }
     setProfileBusy(true);
     try {
+      const primaryBatch = optional(batch);
+      const selectedBatches =
+        primaryBatch === profile.batch
+          ? (profile.batches ?? (primaryBatch ? [primaryBatch] : []))
+          : primaryBatch
+            ? [primaryBatch]
+            : [];
       await createRepositories(db).profiles.update(profile.id, {
         displayName: displayName.trim(),
         institution: optional(institution),
         course: optional(course),
         section: optional(section),
-        batch: optional(batch),
+        batch: primaryBatch,
+        batches: selectedBatches,
         timezone: parsedTimezone.data,
         weekStartsOn,
       });
       if (data.settings.activeProfileId === profile.id) {
         await attendSafeRepository.updateSettings({
-          selectedBatch: optional(batch),
+          selectedBatch: primaryBatch,
+          selectedBatches,
         });
       }
       toast.success("Profile saved");

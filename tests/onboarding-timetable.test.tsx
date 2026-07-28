@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -6,7 +12,10 @@ import {
   TimetableConfirmation,
   type ConfirmationSelections,
 } from "@/components/onboarding/timetable-confirmation";
-import { resolvedOnboardingBatch } from "@/components/onboarding/onboarding";
+import {
+  resolvedOnboardingBatch,
+  resolvedOnboardingGroups,
+} from "@/components/onboarding/onboarding";
 import {
   createEmptyDraft,
   UploadTimetable,
@@ -184,16 +193,29 @@ function ConfirmationHarness({
   );
 }
 
-function continueWizard() {
-  fireEvent.click(screen.getByRole("button", { name: /continue/i }));
-}
-
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("timetable confirmation decisions", () => {
-  it("does not restore a profile batch after explicit none or unsure choices", () => {
+describe("simplified timetable confirmation", () => {
+  it("shows the three student-facing setup steps", () => {
+    render(<ConfirmationHarness />);
+
+    const progress = screen.getByRole("list", {
+      name: "Timetable setup progress",
+    });
+    expect(progress).toHaveTextContent("Upload");
+    expect(progress).toHaveTextContent("Your classes");
+    expect(progress).toHaveTextContent("Review");
+    expect(
+      screen.queryByText("Uncertain items", { exact: true }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Which classes belong to you?" }),
+    ).toBeVisible();
+  });
+
+  it("loads legacy singular batch choices while preferring new arrays", () => {
     expect(
       resolvedOnboardingBatch({ batchDecision: "NONE" }, "B1"),
     ).toBeUndefined();
@@ -206,29 +228,68 @@ describe("timetable confirmation decisions", () => {
     expect(
       resolvedOnboardingBatch({ batchDecision: "SELECTED", batch: "B2" }, "B1"),
     ).toBe("B2");
+    expect(
+      resolvedOnboardingGroups(
+        { batchDecision: "SELECTED", batch: "B2" },
+        "B1",
+      ),
+    ).toEqual(["B2"]);
+    expect(
+      resolvedOnboardingGroups(
+        {
+          selectedGroups: ["C4", "G1"],
+          batchDecision: "SELECTED",
+          batch: "legacy",
+        },
+        "B1",
+      ),
+    ).toEqual(["C4", "G1"]);
   });
 
-  it("keeps batch, elective, and untracked lab alternatives structurally enabled", () => {
+  it("selects common classes by default and updates the count immediately", () => {
+    render(<ConfirmationHarness />);
+
+    const common = screen.getByRole("checkbox", {
+      name: /Digital Signal Processing/,
+    });
+    expect(common).toBeChecked();
+    expect(screen.getByText("3 classes selected")).toBeVisible();
+    fireEvent.click(common);
+    expect(screen.getByText("2 classes selected")).toBeVisible();
+  });
+
+  it("supports multiple and custom groups without replacing selections", () => {
+    render(<ConfirmationHarness />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "B1" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "B2" }));
+    expect(screen.getByText("5 classes selected")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add another group" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Custom group" }), {
+      target: { value: "  A   3  " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add group" }));
+    expect(screen.getByRole("checkbox", { name: "B1" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "B2" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "A 3" })).toBeChecked();
+  });
+
+  it("passes only selected classes to review and final confirmation", () => {
     const onConfirm = vi.fn();
     render(<ConfirmationHarness onConfirm={onConfirm} />);
 
-    continueWizard();
+    fireEvent.click(screen.getByRole("checkbox", { name: "B1" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "B2" }));
     fireEvent.click(
-      screen.getByRole("radio", {
-        name: "My timetable does not use batches",
-      }),
+      screen.getByRole("checkbox", { name: /Optical Communication/ }),
     );
-    continueWizard();
-    expect(screen.getByRole("radio", { name: "None" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Review schedule" }));
+
     expect(
-      screen.getByRole("radio", { name: "I am not sure" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("textbox", { name: "Enter another subject" }),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("radio", { name: "None" }));
-    continueWizard();
-    continueWizard();
+      screen.getByRole("heading", { name: "Review your schedule" }),
+    ).toBeVisible();
+    expect(screen.queryByText("Form list")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("confirm-timetable"));
 
     expect(onConfirm).toHaveBeenCalledOnce();
@@ -236,75 +297,96 @@ describe("timetable confirmation decisions", () => {
       NormalizedTimetableDraft,
       ConfirmationSelections,
     ];
-    expect(savedDraft.timetableSlots.every((slot) => slot.isEnabled)).toBe(
-      true,
-    );
+    expect(savedDraft.timetableSlots.map((slot) => slot.temporaryId)).toEqual([
+      "core-slot",
+      "elective-a-slot",
+      "lab-b1",
+      "lab-b2",
+    ]);
+    expect(savedDraft.subjects.map((subject) => subject.temporaryId)).toEqual([
+      "core",
+      "elective-a",
+      "lab",
+    ]);
     expect(selections).toMatchObject({
-      batchDecision: "NONE",
-      batch: undefined,
-      electiveSubjectIds: { "elective-one": [] },
+      selectedGroups: ["B1", "B2"],
+      batchDecision: "SELECTED",
+      batch: "B1",
+      electiveSubjectIds: { "elective-one": ["elective-a"] },
     });
-    expect(selections.tracked.LAB).toBe(false);
+    expect(selections.tracked.LAB).toBe(true);
   });
 
-  it("adds and selects a manually entered elective subject", () => {
+  it("goes back to class selection without duplicating classes", () => {
     render(<ConfirmationHarness />);
-    continueWizard();
-    fireEvent.click(screen.getByRole("radio", { name: "B1" }));
-    continueWizard();
-
-    fireEvent.change(
-      screen.getByRole("textbox", { name: "Enter another subject" }),
-      { target: { value: "Satellite Communication" } },
+    fireEvent.click(screen.getByRole("checkbox", { name: "B1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review schedule" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to class selection" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Add & select" }));
-
     expect(
-      screen.getByRole("radio", { name: "Satellite Communication" }),
-    ).toBeChecked();
-    expect(screen.getByRole("button", { name: /continue/i })).toBeEnabled();
+      screen.getByRole("heading", { name: "Which classes belong to you?" }),
+    ).toBeVisible();
+    expect(screen.getByText("4 classes selected")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Review schedule" }));
+    expect(screen.getAllByTestId(/^timetable-slot-/)).toHaveLength(4);
   });
 
-  it("skips batch and elective steps when no alternatives were detected", () => {
-    const value = confirmationDraft();
-    value.detectedBatchOptions = [];
-    value.detectedElectiveGroups = [];
-    render(<ConfirmationHarness initial={value} />);
-
-    continueWizard();
-
-    expect(
-      screen.getByRole("heading", {
-        name: "What should count toward attendance?",
+  it("lets the student remove a class from the single review editor", () => {
+    const onConfirm = vi.fn();
+    render(<ConfirmationHarness onConfirm={onConfirm} />);
+    fireEvent.click(screen.getByRole("button", { name: "Review schedule" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /DSP, Monday, 9:00 AM to 10:00 AM/,
       }),
-    ).toBeInTheDocument();
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove class" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete class" }));
+    fireEvent.click(screen.getByTestId("confirm-timetable"));
+
+    const [savedDraft] = onConfirm.mock.calls[0] as [
+      NormalizedTimetableDraft,
+      ConfirmationSelections,
+    ];
     expect(
-      screen.queryByText("Which batch applies to you?"),
-    ).not.toBeInTheDocument();
+      savedDraft.timetableSlots.some(
+        (slot) => slot.temporaryId === "core-slot",
+      ),
+    ).toBe(false);
   });
 
-  it("validates mid-semester attendance as whole counts with attended at most held", () => {
-    const value = confirmationDraft();
-    value.detectedBatchOptions = [];
-    value.detectedElectiveGroups = [];
-    render(<ConfirmationHarness initial={value} />);
-    continueWizard();
-    continueWizard();
+  it("adds a class from the same simplified review editor", async () => {
+    const onConfirm = vi.fn();
+    render(<ConfirmationHarness onConfirm={onConfirm} />);
+    fireEvent.click(screen.getByRole("button", { name: "Review schedule" }));
+    fireEvent.click(screen.getByTestId("add-class"));
+    const dialog = screen.getByRole("dialog", { name: "Add a class" });
+    fireEvent.change(within(dialog).getByLabelText("Subject name"), {
+      target: { value: "Control Systems" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Subject code"), {
+      target: { value: "ECE202" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Create class" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Add a class" }),
+      ).not.toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByTestId("confirm-timetable"));
 
-    const held = screen.getAllByRole("spinbutton", {
-      name: "Classes held",
-    })[0];
-    const attended = screen.getAllByRole("spinbutton", {
-      name: "Attended",
-    })[0];
-    fireEvent.change(held, { target: { value: "1.5" } });
-    expect(screen.getByTestId("confirm-timetable")).toBeDisabled();
-    fireEvent.change(held, { target: { value: "2" } });
-    fireEvent.change(attended, { target: { value: "3" } });
-    expect(screen.getByText("Cannot exceed held")).toBeInTheDocument();
-    expect(screen.getByTestId("confirm-timetable")).toBeDisabled();
-    fireEvent.change(attended, { target: { value: "1" } });
-    expect(screen.getByTestId("confirm-timetable")).toBeEnabled();
+    const [savedDraft] = onConfirm.mock.calls[0] as [
+      NormalizedTimetableDraft,
+      ConfirmationSelections,
+    ];
+    expect(savedDraft.subjects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "Control Systems", code: "ECE202" }),
+      ]),
+    );
   });
 });
 

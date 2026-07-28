@@ -113,11 +113,11 @@ async function completeProfileSetup(
 }
 
 async function advanceTimetableConfirmation(page: Page): Promise<void> {
-  for (let step = 0; step < 6; step += 1) {
-    if (await page.getByTestId("confirm-timetable").isVisible()) return;
-    await page.getByRole("button", { name: /^Continue/ }).click();
-  }
-  throw new Error("Timetable confirmation review was not reached.");
+  await expect(
+    page.getByRole("heading", { name: "Which classes belong to you?" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Review schedule" }).click();
+  await expect(page.getByTestId("confirm-timetable")).toBeVisible();
 }
 
 async function expectControlReceivesPointerEvents(
@@ -214,7 +214,9 @@ test("timetable upload can skip local OCR and continue to manual review", async 
     .getByRole("button", { name: /Skip OCR and enter it myself/ })
     .click();
 
-  await advanceTimetableConfirmation(page);
+  await expect(
+    page.getByRole("heading", { name: "Build it your way" }),
+  ).toBeVisible();
   await page.getByTestId("add-class").click();
   const subjectForm = page.getByTestId("add-subject-form");
   await subjectForm.getByLabel("Subject name").fill("Uploaded Schedule Class");
@@ -225,6 +227,8 @@ test("timetable upload can skip local OCR and continue to manual review", async 
   await subjectForm.getByLabel("Ends").fill("12:00");
   await subjectForm.getByTestId("preview-subject").click();
   await page.getByTestId("confirm-add-subject").click();
+  await page.getByTestId("review-manual-timetable").click();
+  await advanceTimetableConfirmation(page);
   await expectControlReceivesPointerEvents(page, "confirm-timetable");
   await page.getByTestId("confirm-timetable").click();
 

@@ -4,22 +4,20 @@ import type {
   Subject,
   TimetableSlot,
 } from "@/types/domain";
+import { normalizeGroupName } from "./personal-draft";
 
 export interface TimetableFilterOptions {
   slots: readonly TimetableSlot[];
   subjects: readonly Subject[];
   electiveGroups?: readonly ElectiveGroup[];
   selectedBatch?: string | null;
+  selectedBatches?: readonly string[];
   selectedElectiveSubjectIds?: readonly string[];
   trackedClassTypes?: Partial<Record<ClassType, boolean>>;
   includeZeroCredit?: boolean;
   includeDisabled?: boolean;
   includePlaceholders?: boolean;
   includeBreaks?: boolean;
-}
-
-function normalizeSelection(value: string): string {
-  return value.trim().toLocaleLowerCase();
 }
 
 export function getSelectedElectiveSubjectIds(
@@ -35,6 +33,7 @@ export function filterTimetableSlots({
   subjects,
   electiveGroups = [],
   selectedBatch,
+  selectedBatches,
   selectedElectiveSubjectIds,
   trackedClassTypes,
   includeZeroCredit = true,
@@ -49,9 +48,11 @@ export function filterTimetableSlots({
     electiveGroups,
     selectedElectiveSubjectIds,
   );
-  const normalizedBatch = selectedBatch
-    ? normalizeSelection(selectedBatch)
-    : undefined;
+  const normalizedBatches = new Set(
+    (selectedBatches ?? (selectedBatch ? [selectedBatch] : [])).map(
+      normalizeGroupName,
+    ),
+  );
 
   return slots.filter((slot) => {
     if (!includeDisabled && !slot.isEnabled) return false;
@@ -67,10 +68,10 @@ export function filterTimetableSlots({
     if (trackedClassTypes?.[subject.classType] === false) return false;
 
     if (slot.batchRestriction.length > 0) {
-      if (!normalizedBatch) return false;
+      if (normalizedBatches.size === 0) return false;
       if (
-        !slot.batchRestriction.some(
-          (batch) => normalizeSelection(batch) === normalizedBatch,
+        !slot.batchRestriction.some((batch) =>
+          normalizedBatches.has(normalizeGroupName(batch)),
         )
       ) {
         return false;

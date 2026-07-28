@@ -58,11 +58,15 @@ export function DraftEditor({
   onChange,
   compact = false,
   initialEditSlotId,
+  fixedView,
+  simple = false,
 }: {
   value: NormalizedTimetableDraft;
   onChange: (value: NormalizedTimetableDraft) => void;
   compact?: boolean;
   initialEditSlotId?: string;
+  fixedView?: "GRID" | "LIST";
+  simple?: boolean;
 }) {
   const [view, setView] = useState<"GRID" | "LIST">("LIST");
   const [pendingDelete, setPendingDelete] = useState<DraftSlot>();
@@ -73,6 +77,7 @@ export function DraftEditor({
         )
       : undefined,
   );
+  const [slotFormOpen, setSlotFormOpen] = useState(Boolean(initialEditSlotId));
   const [newSlotContext, setNewSlotContext] = useState<{
     day?: DayOfWeek;
     start?: string;
@@ -95,6 +100,7 @@ export function DraftEditor({
   );
 
   useEffect(() => {
+    if (fixedView) return;
     const timer = window.setTimeout(() => {
       const stored = localStorage.getItem("attendsafe-editor-view");
       if (stored === "GRID" || stored === "LIST") setView(stored);
@@ -102,7 +108,9 @@ export function DraftEditor({
         setView("GRID");
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [fixedView]);
+
+  const activeView = fixedView ?? view;
 
   const changeView = (next: "GRID" | "LIST") => {
     setView(next);
@@ -236,49 +244,60 @@ export function DraftEditor({
   return (
     <div className="grid min-w-0 gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div
-          className="bg-secondary flex items-center rounded-xl p-1"
-          aria-label="Builder view"
-        >
-          <Button
-            size="sm"
-            variant={view === "GRID" ? "primary" : "ghost"}
-            onClick={() => changeView("GRID")}
-            aria-pressed={view === "GRID"}
+        {!fixedView ? (
+          <div
+            className="bg-secondary flex items-center rounded-xl p-1"
+            aria-label="Builder view"
           >
-            <Grid3X3 className="size-4" /> Weekly grid
-          </Button>
-          <Button
-            size="sm"
-            variant={view === "LIST" ? "primary" : "ghost"}
-            onClick={() => changeView("LIST")}
-            aria-pressed={view === "LIST"}
-          >
-            <List className="size-4" /> Form list
-          </Button>
-        </div>
+            <Button
+              size="sm"
+              variant={view === "GRID" ? "primary" : "ghost"}
+              onClick={() => changeView("GRID")}
+              aria-pressed={view === "GRID"}
+            >
+              <Grid3X3 className="size-4" /> Weekly grid
+            </Button>
+            <Button
+              size="sm"
+              variant={view === "LIST" ? "primary" : "ghost"}
+              onClick={() => changeView("LIST")}
+              aria-pressed={view === "LIST"}
+            >
+              <List className="size-4" /> Form list
+            </Button>
+          </div>
+        ) : (
+          <p className="text-muted-foreground text-sm font-semibold">
+            Tap any class to edit or remove it.
+          </p>
+        )}
         <div className="flex min-w-0 flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setPasteOpen(true)}
-          >
-            <ClipboardPaste className="size-4" /> Paste timetable
-          </Button>
+          {!simple ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setPasteOpen(true)}
+            >
+              <ClipboardPaste className="size-4" /> Paste timetable
+            </Button>
+          ) : null}
           <Button
             size="sm"
             onClick={() => {
               setEditingSlot(undefined);
-              setAddSubjectOpen(true);
+              setNewSlotContext(undefined);
+              if (simple) setSlotFormOpen(true);
+              else setAddSubjectOpen(true);
             }}
             data-testid="add-class"
           >
-            <Plus className="size-4" /> Add Subject
+            <Plus className="size-4" /> {simple ? "Add class" : "Add Subject"}
           </Button>
         </div>
       </div>
 
-      {duplicateSubjectSummary.duplicateCount > 0 || duplicateSlotCount > 0 ? (
+      {!simple &&
+      (duplicateSubjectSummary.duplicateCount > 0 || duplicateSlotCount > 0) ? (
         <div className="border-warning-strong/20 bg-warning-soft text-warning-strong flex flex-col gap-3 rounded-xl border px-4 py-3 text-sm sm:flex-row sm:items-center">
           <p className="mr-auto">
             {duplicateSubjectSummary.duplicateCount > 0
@@ -328,14 +347,13 @@ export function DraftEditor({
 
       {conflictCount > 0 ? (
         <div className="border-danger/20 bg-danger-soft text-danger rounded-xl border px-4 py-3 text-sm font-semibold">
-          {conflictCount} overlapping{" "}
-          {conflictCount === 1 ? "class needs" : "classes need"} review.
-          Mutually exclusive batch, elective, and odd/even alternatives are
-          allowed.
+          {simple
+            ? "Some classes happen at the same time. Tap them to check which ones belong."
+            : `${conflictCount} overlapping ${conflictCount === 1 ? "class needs" : "classes need"} review. Mutually exclusive group and odd/even alternatives are allowed.`}
         </div>
       ) : null}
 
-      {view === "GRID" ? (
+      {activeView === "GRID" ? (
         <WeeklyGridBuilder
           slots={value.timetableSlots}
           subjects={value.subjects}
@@ -343,11 +361,13 @@ export function DraftEditor({
           onAdd={(day, start) => {
             setEditingSlot(undefined);
             setNewSlotContext({ day, start });
-            setAddSubjectOpen(true);
+            if (simple) setSlotFormOpen(true);
+            else setAddSubjectOpen(true);
           }}
           onEdit={(slot) => {
             setNewSlotContext(undefined);
             setEditingSlot(slot);
+            setSlotFormOpen(true);
           }}
         />
       ) : (
@@ -420,7 +440,10 @@ export function DraftEditor({
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setEditingSlot(slot)}
+                        onClick={() => {
+                          setEditingSlot(slot);
+                          setSlotFormOpen(true);
+                        }}
                       >
                         Edit
                       </Button>
@@ -460,14 +483,27 @@ export function DraftEditor({
       ) : null}
 
       <SlotFormDialog
-        open={Boolean(editingSlot)}
+        open={slotFormOpen}
         onClose={() => {
+          setSlotFormOpen(false);
           setEditingSlot(undefined);
           setNewSlotContext(undefined);
         }}
         subjects={value.subjects}
         slot={editingSlot}
+        initialDay={newSlotContext?.day}
+        initialStart={newSlotContext?.start}
         onSave={saveSlot}
+        simple={simple}
+        onDelete={
+          editingSlot
+            ? () => {
+                setPendingDelete(editingSlot);
+                setSlotFormOpen(false);
+                setEditingSlot(undefined);
+              }
+            : undefined
+        }
       />
 
       <AddSubjectDialog

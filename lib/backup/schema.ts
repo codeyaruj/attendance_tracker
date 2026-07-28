@@ -141,6 +141,7 @@ const legacySettingsSchema = z
     activeSemesterId: idSchema.optional(),
     theme: z.enum(["LIGHT", "DARK", "SYSTEM"]),
     selectedBatch: z.string().min(1).max(500).optional(),
+    selectedBatches: z.array(z.string().min(1).max(500)).max(100).optional(),
     trackedClassTypes: z
       .object({
         THEORY: z.boolean(),

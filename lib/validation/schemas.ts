@@ -79,6 +79,7 @@ export const profileSchema = z
     course: optionalTextSchema,
     section: optionalTextSchema,
     batch: optionalTextSchema,
+    batches: z.array(trimmedTextSchema(500)).max(100).optional(),
     timezone: timeZoneSchema,
     weekStartsOn: z.enum(["MONDAY", "SUNDAY"]),
     ...timestampShape,
@@ -427,6 +428,7 @@ export const appSettingsSchema = z
     activeSemesterId: idSchema.optional(),
     theme: z.enum(["LIGHT", "DARK", "SYSTEM"]),
     selectedBatch: optionalTextSchema,
+    selectedBatches: z.array(trimmedTextSchema(500)).max(100).optional(),
     trackedClassTypes: z
       .object({
         THEORY: z.boolean(),

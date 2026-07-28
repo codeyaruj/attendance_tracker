@@ -159,6 +159,7 @@ export interface CreateProfileSetupInput {
     course?: string;
     section?: string;
     batch?: string;
+    batches?: string[];
     timezone?: string;
     weekStartsOn?: Profile["weekStartsOn"];
   };
@@ -233,6 +234,7 @@ export async function createProfileSetup(
     course: input.profile.course?.trim() || undefined,
     section: input.profile.section?.trim() || undefined,
     batch: input.profile.batch?.trim() || undefined,
+    batches: input.profile.batches?.map((item) => item.trim()).filter(Boolean),
     timezone: input.profile.timezone ?? "Asia/Kolkata",
     weekStartsOn: input.profile.weekStartsOn ?? "MONDAY",
     ...entityTimestamps(now),
@@ -311,6 +313,8 @@ export async function createProfileSetup(
               activeProfileId: profile.id,
               activeSemesterId: semester.id,
               selectedBatch: profile.batch,
+              selectedBatches:
+                profile.batches ?? (profile.batch ? [profile.batch] : []),
               updatedAt: now,
             };
       await database.appSettings.put(settings);
@@ -822,6 +826,7 @@ export async function deleteProfile(
         activeProfileId: undefined,
         activeSemesterId: undefined,
         selectedBatch: undefined,
+        selectedBatches: undefined,
         updatedAt: new Date().toISOString(),
       });
     }
@@ -856,6 +861,7 @@ export async function exitDemoMode(
       activeProfileId: undefined,
       activeSemesterId: undefined,
       selectedBatch: undefined,
+      selectedBatches: undefined,
       updatedAt: new Date().toISOString(),
     });
   });
@@ -1055,6 +1061,7 @@ export async function installGeneratedDemoData(
   await saveTimetableBundle(database, bundle);
   await createRepositories(database).appSettings.update({
     selectedBatch: "B1",
+    selectedBatches: ["B1"],
     trackedClassTypes: {
       THEORY: true,
       LAB: false,

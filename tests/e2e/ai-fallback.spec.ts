@@ -103,28 +103,22 @@ test("AI fallback requires consent and opens the existing editable review", asyn
   expect(requests).toBe(0);
 
   await page.getByTestId("use-ai-timetable").click();
-  await page.evaluate(() =>
-    localStorage.setItem("attendsafe-editor-view", "LIST"),
-  );
   await page.getByRole("button", { name: "Continue with AI" }).click();
   await expect(
-    page.getByText("AI-assisted extraction.", { exact: false }),
+    page.getByText(
+      "AI-assisted extraction. Check the classes below before continuing.",
+      { exact: true },
+    ),
   ).toBeVisible();
   expect(requests).toBe(1);
 
-  for (let index = 0; index < 5; index += 1) {
-    if (await page.getByTestId("confirm-timetable").isVisible()) break;
-    await page.getByRole("button", { name: /^Continue/ }).click();
-  }
+  await page.getByRole("button", { name: "Review schedule" }).click();
   await expect(page.getByText("AI Extracted Class").first()).toBeVisible();
-  await page.getByRole("button", { name: "Weekly grid" }).click();
   await expect(page.getByTestId("weekly-grid-corner")).toHaveText("Day / Time");
-  await expect(
-    page.getByRole("button", {
-      name: "AI501, Thursday, 11:00 AM to 12:00 PM",
-    }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Form list" }).click();
+  const aiClass = page.getByRole("button", {
+    name: "AI501, Thursday, 11:00 AM to 12:00 PM",
+  });
+  await expect(aiClass).toBeVisible();
   expect(
     await page.evaluate(
       () =>
@@ -146,7 +140,7 @@ test("AI fallback requires consent and opens the existing editable review", asyn
         }),
     ),
   ).toBe(0);
-  await page.getByRole("button", { name: "Edit" }).click();
+  await aiClass.click();
   const editDialog = page.getByRole("dialog", { name: "Edit class" });
   await editDialog.getByLabel("Subject name").fill("Reviewed AI Class");
   await editDialog.getByTestId("save-slot").click();

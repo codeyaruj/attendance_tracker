@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Trash2 } from "lucide-react";
 import { useEffect } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
@@ -97,6 +98,8 @@ export function SlotFormDialog({
   initialDay,
   initialStart,
   onSave,
+  onDelete,
+  simple = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -109,6 +112,8 @@ export function SlotFormDialog({
     slot: DraftSlot,
     editScope: DraftSlotEditScope,
   ) => void;
+  onDelete?: () => void;
+  simple?: boolean;
 }) {
   const {
     register,
@@ -210,7 +215,11 @@ export function SlotFormDialog({
       open={open}
       onClose={onClose}
       title={slot ? "Edit class" : "Add a class"}
-      description="Custom times, alternatives, batches, and alternating weeks are all supported."
+      description={
+        simple
+          ? "Update the class details below."
+          : "Custom times, alternatives, batches, and alternating weeks are all supported."
+      }
     >
       <form onSubmit={submit} className="grid gap-5" data-testid="slot-form">
         {subjects.length > 0 ? (
@@ -254,18 +263,22 @@ export function SlotFormDialog({
           <Field label="Subject code" error={errors.subjectCode?.message}>
             <Input {...register("subjectCode")} placeholder="BEC503" />
           </Field>
-          <Field label="Short name">
-            <Input {...register("shortName")} placeholder="DSP" />
-          </Field>
-          <Field label="Class type">
-            <Select {...register("classType")}>
-              {CLASS_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type[0] + type.slice(1).toLowerCase()}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          {!simple ? (
+            <>
+              <Field label="Short name">
+                <Input {...register("shortName")} placeholder="DSP" />
+              </Field>
+              <Field label="Class type">
+                <Select {...register("classType")}>
+                  {CLASS_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {type[0] + type.slice(1).toLowerCase()}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </>
+          ) : null}
         </div>
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
@@ -308,7 +321,7 @@ export function SlotFormDialog({
           </Field>
         </div>
 
-        {slot ? (
+        {slot && !simple ? (
           <fieldset className="border-border grid gap-2 rounded-2xl border p-4">
             <legend className="px-2 font-bold">Apply changes to</legend>
             {[
@@ -347,85 +360,106 @@ export function SlotFormDialog({
           <Field label="Room">
             <Input {...register("room")} placeholder="AB-304" />
           </Field>
-          <Field label="Credits">
-            <Input
-              type="number"
-              min="0"
-              max="30"
-              step="0.5"
-              {...register("credits")}
-            />
-          </Field>
-          <Field label="Week pattern">
-            <Select {...register("weekPattern")}>
-              <option value="EVERY_WEEK">Every week</option>
-              <option value="ODD_WEEK">Odd weeks</option>
-              <option value="EVEN_WEEK">Even weeks</option>
-              <option value="CUSTOM">Custom rule</option>
-            </Select>
-          </Field>
-          {weekPattern === "CUSTOM" ? (
-            <Field label="Custom week rule" hint="Example: 1, 3, 5, 8-10">
-              <Input {...register("customWeekPattern")} />
-            </Field>
+          {!simple ? (
+            <>
+              <Field label="Credits">
+                <Input
+                  type="number"
+                  min="0"
+                  max="30"
+                  step="0.5"
+                  {...register("credits")}
+                />
+              </Field>
+              <Field label="Week pattern">
+                <Select {...register("weekPattern")}>
+                  <option value="EVERY_WEEK">Every week</option>
+                  <option value="ODD_WEEK">Odd weeks</option>
+                  <option value="EVEN_WEEK">Even weeks</option>
+                  <option value="CUSTOM">Custom rule</option>
+                </Select>
+              </Field>
+              {weekPattern === "CUSTOM" ? (
+                <Field label="Custom week rule" hint="Example: 1, 3, 5, 8-10">
+                  <Input {...register("customWeekPattern")} />
+                </Field>
+              ) : null}
+              <Field
+                label="Batch restriction"
+                hint="Leave blank if it applies to everyone"
+              >
+                <Input {...register("batchRestriction")} placeholder="B1, B2" />
+              </Field>
+              <Field
+                label="Elective group"
+                hint="Use the same name for alternatives"
+              >
+                <Input
+                  {...register("electiveGroup")}
+                  placeholder="Elective II"
+                />
+              </Field>
+            </>
           ) : null}
-          <Field
-            label="Batch restriction"
-            hint="Leave blank if it applies to everyone"
-          >
-            <Input {...register("batchRestriction")} placeholder="B1, B2" />
-          </Field>
-          <Field
-            label="Elective group"
-            hint="Use the same name for alternatives"
-          >
-            <Input {...register("electiveGroup")} placeholder="Elective II" />
-          </Field>
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="bg-secondary flex items-center gap-2 rounded-xl p-3 text-sm font-medium">
-            <input
-              type="checkbox"
-              className="accent-primary size-4"
-              {...register("isZeroCredit")}
-            />
-            Zero credit
-          </label>
-          <label className="bg-secondary flex items-center gap-2 rounded-xl p-3 text-sm font-medium">
-            <input
-              type="checkbox"
-              className="accent-primary size-4"
-              {...register("isPlaceholder")}
-            />
-            Placeholder
-          </label>
-          <label className="bg-secondary flex items-center gap-2 rounded-xl p-3 text-sm font-medium">
-            <input
-              type="checkbox"
-              className="accent-primary size-4"
-              {...register("isBreak")}
-            />
-            Break / lunch
-          </label>
-          <label className="bg-secondary flex items-center gap-2 rounded-xl p-3 text-sm font-medium">
-            <input
-              type="checkbox"
-              className="accent-primary size-4"
-              {...register("isEnabled")}
-            />
-            Include / applicable
-          </label>
-        </div>
+        {!simple ? (
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <label className="bg-secondary flex items-center gap-2 rounded-xl p-3 text-sm font-medium">
+              <input
+                type="checkbox"
+                className="accent-primary size-4"
+                {...register("isZeroCredit")}
+              />
+              Zero credit
+            </label>
+            <label className="bg-secondary flex items-center gap-2 rounded-xl p-3 text-sm font-medium">
+              <input
+                type="checkbox"
+                className="accent-primary size-4"
+                {...register("isPlaceholder")}
+              />
+              Placeholder
+            </label>
+            <label className="bg-secondary flex items-center gap-2 rounded-xl p-3 text-sm font-medium">
+              <input
+                type="checkbox"
+                className="accent-primary size-4"
+                {...register("isBreak")}
+              />
+              Break / lunch
+            </label>
+            <label className="bg-secondary flex items-center gap-2 rounded-xl p-3 text-sm font-medium">
+              <input
+                type="checkbox"
+                className="accent-primary size-4"
+                {...register("isEnabled")}
+              />
+              Include / applicable
+            </label>
+          </div>
+        ) : null}
 
-        <Field label="Notes">
-          <Textarea
-            {...register("notes")}
-            placeholder="Optional scheduling note"
-          />
-        </Field>
+        {!simple ? (
+          <Field label="Notes">
+            <Textarea
+              {...register("notes")}
+              placeholder="Optional scheduling note"
+            />
+          </Field>
+        ) : null}
 
-        <div className="border-border flex justify-end gap-2 border-t pt-4">
+        <div className="border-border flex flex-wrap justify-end gap-2 border-t pt-4">
+          {slot && onDelete ? (
+            <Button
+              type="button"
+              variant="danger"
+              className="mr-auto"
+              onClick={onDelete}
+            >
+              <Trash2 className="size-4" /> Remove class
+            </Button>
+          ) : null}
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>

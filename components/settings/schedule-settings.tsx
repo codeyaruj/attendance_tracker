@@ -86,6 +86,7 @@ export function ScheduleSettings({ data }: { data: AttendSafeSnapshot }) {
     try {
       await attendSafeRepository.updateSettings({
         selectedBatch: value || undefined,
+        selectedBatches: value ? [value] : [],
       });
       toast.success(
         value ? `Batch ${value} selected` : "Batch filtering disabled",

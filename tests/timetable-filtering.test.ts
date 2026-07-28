@@ -87,6 +87,21 @@ describe("timetable selection filtering", () => {
     expect(slots[0]?.batchRestriction).toEqual(["A"]);
   });
 
+  it("uses union matching for multiple selected groups", () => {
+    const demo = createDemoTimetable();
+    const slots = filterTimetableSlots({
+      slots: demo.timetableSlots,
+      subjects: demo.subjects,
+      electiveGroups: demo.electiveGroups,
+      selectedBatches: [" a ", "B"],
+      selectedElectiveSubjectIds: demo.selection.selectedElectiveSubjectIds,
+      trackedClassTypes: allClassTypes,
+    }).filter((slot) => slot.subjectId === DEMO_IDS.dspLab);
+
+    expect(slots).toHaveLength(2);
+    expect(slots.map((slot) => slot.batchRestriction[0])).toEqual(["A", "B"]);
+  });
+
   it("supports a user with no batch by excluding restricted alternatives", () => {
     const demo = createDemoTimetable();
     const slots = filterTimetableSlots({

@@ -4,5 +4,6 @@ export * from "./draft-operations";
 export * from "./filter";
 export * from "./occurrence-id";
 export * from "./pasted-text-parser";
+export * from "./personal-draft";
 export * from "./session-resolver";
 export * from "./weekly-grid";

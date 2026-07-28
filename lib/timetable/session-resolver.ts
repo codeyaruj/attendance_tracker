@@ -32,6 +32,7 @@ export interface SessionResolutionContext {
   persistedSessions?: readonly ClassSession[];
   attendanceRecords?: readonly AttendanceRecord[];
   selectedBatch?: string | null;
+  selectedBatches?: readonly string[];
   selectedElectiveSubjectIds?: readonly string[];
   trackedClassTypes?: Partial<Record<ClassType, boolean>>;
   includeZeroCredit?: boolean;
@@ -448,6 +449,7 @@ export function resolveSessionsForDate({
   persistedSessions = [],
   attendanceRecords = [],
   selectedBatch,
+  selectedBatches,
   selectedElectiveSubjectIds,
   trackedClassTypes,
   includeZeroCredit = true,
@@ -465,6 +467,7 @@ export function resolveSessionsForDate({
     subjects,
     electiveGroups,
     selectedBatch,
+    selectedBatches,
     selectedElectiveSubjectIds,
     trackedClassTypes,
     includeZeroCredit,

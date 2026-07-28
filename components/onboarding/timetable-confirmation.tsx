@@ -1,23 +1,29 @@
 "use client";
 
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  CircleAlert,
-  ImageIcon,
-  Sparkles,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ImageIcon, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { formatClockTime } from "@/components/attendance/attendance-view-model";
+import { DraftEditor } from "@/components/timetable/draft-editor";
+import { WeeklyTimetableGrid } from "@/components/timetable/weekly-timetable-grid";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Field, Input, Switch } from "@/components/ui/form-controls";
-import { DraftEditor } from "@/components/timetable/draft-editor";
+import { Input } from "@/components/ui/form-controls";
+import {
+  createPersonalTimetableDraft,
+  normalizeGroupName,
+  normalizeSelectedGroups,
+} from "@/lib/timetable";
 import { cn } from "@/lib/utils";
-import type { ClassType, NormalizedTimetableDraft } from "@/types";
+import type {
+  ClassType,
+  DraftSlot,
+  DraftSubject,
+  NormalizedTimetableDraft,
+} from "@/types";
 import type { ImageEdits } from "./upload-timetable";
 
 export type ConfirmationSelections = {
+  selectedGroups?: string[];
   batchDecision: "NOT_ASKED" | "SELECTED" | "NONE" | "UNSURE";
   batch?: string;
   electiveSubjectIds: Record<string, string[]>;
@@ -30,17 +36,166 @@ type SourceReference = {
   edits: ImageEdits;
   extractionMessage?: string;
 };
-type ConfirmationStep =
-  "UNCERTAIN" | "BATCH" | "ELECTIVES" | "TYPES" | "REVIEW";
-type ElectiveDecision = "SELECTED" | "NONE" | "UNSURE";
 
-const stepLabels: Record<ConfirmationStep, string> = {
-  UNCERTAIN: "Uncertain items",
-  BATCH: "Your batch",
-  ELECTIVES: "Electives",
-  TYPES: "Class types",
-  REVIEW: "Final review",
-};
+function subjectFor(
+  draft: NormalizedTimetableDraft,
+  slot: DraftSlot,
+): DraftSubject | undefined {
+  return draft.subjects.find(
+    (subject) => subject.temporaryId === slot.subjectTemporaryId,
+  );
+}
+
+function isUncertain(
+  draft: NormalizedTimetableDraft,
+  slot: DraftSlot,
+): boolean {
+  const subject = subjectFor(draft, slot);
+  return (
+    slot.confidence < 0.75 ||
+    (subject?.confidence ?? 1) < 0.75 ||
+    Boolean(slot.electiveGroupId) ||
+    slot.isPlaceholder ||
+    !slot.subjectTemporaryId
+  );
+}
+
+function classLabel(draft: NormalizedTimetableDraft, slot: DraftSlot): string {
+  const subject = subjectFor(draft, slot);
+  return subject?.name ?? (slot.isBreak ? "Break" : "Unassigned class");
+}
+
+function trackedSelections(draft: NormalizedTimetableDraft) {
+  const tracked: Record<ClassType | "ZERO_CREDIT", boolean> = {
+    THEORY: false,
+    LAB: false,
+    TUTORIAL: false,
+    SEMINAR: false,
+    PROJECT: false,
+    OTHER: false,
+    ZERO_CREDIT: false,
+  };
+  for (const subject of draft.subjects) {
+    tracked[subject.classType] = true;
+    if (subject.isZeroCredit) tracked.ZERO_CREDIT = true;
+  }
+  return tracked;
+}
+
+function mergeReviewIntoSelectionSource({
+  source,
+  baseSlotIds,
+  edited,
+}: {
+  source: NormalizedTimetableDraft;
+  baseSlotIds: ReadonlySet<string>;
+  edited: NormalizedTimetableDraft;
+}): NormalizedTimetableDraft {
+  const subjects = new Map(
+    source.subjects.map((subject) => [subject.temporaryId, subject]),
+  );
+  for (const subject of edited.subjects) {
+    subjects.set(subject.temporaryId, subject);
+  }
+  return {
+    ...source,
+    subjects: [...subjects.values()],
+    timetableSlots: [
+      ...source.timetableSlots.filter(
+        (slot) => !baseSlotIds.has(slot.temporaryId),
+      ),
+      ...edited.timetableSlots,
+    ],
+  };
+}
+
+function Progress({ review }: { review: boolean }) {
+  const steps = ["Upload", "Your classes", "Review"];
+  const activeIndex = review ? 2 : 1;
+  return (
+    <ol
+      className="grid grid-cols-3 gap-2"
+      aria-label="Timetable setup progress"
+    >
+      {steps.map((label, index) => (
+        <li
+          key={label}
+          className={cn(
+            "border-border bg-surface text-muted-foreground flex min-w-0 items-center gap-2 rounded-xl border px-2.5 py-2 text-xs font-bold sm:px-3",
+            index === activeIndex &&
+              "border-primary bg-primary-soft text-primary",
+            index < activeIndex && "bg-safe-soft text-safe-strong",
+          )}
+          aria-current={index === activeIndex ? "step" : undefined}
+        >
+          <span className="grid size-5 shrink-0 place-items-center rounded-full bg-current/10">
+            {index < activeIndex ? <Check className="size-3" /> : index + 1}
+          </span>
+          <span className="truncate">{label}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function CompactSchedulePreview({
+  draft,
+}: {
+  draft: NormalizedTimetableDraft;
+}) {
+  const slots = draft.timetableSlots.filter(
+    (slot) => !slot.isBreak && !slot.isPlaceholder,
+  );
+  const entries = slots.map((slot) => {
+    const subject = subjectFor(draft, slot);
+    return {
+      id: slot.temporaryId,
+      dayOfWeek: slot.dayOfWeek,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      title: subject?.shortName || subject?.code || subject?.name || "Class",
+      subjectName: subject?.name,
+      qualifiers: slot.batchOptions,
+    };
+  });
+
+  return (
+    <div className="grid gap-3">
+      <div className="grid gap-2 lg:hidden" aria-label="Selected schedule">
+        {slots.map((slot) => (
+          <div
+            key={slot.temporaryId}
+            className="border-border bg-surface flex items-center justify-between gap-3 rounded-xl border p-3"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold">
+                {classLabel(draft, slot)}
+              </p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                {slot.dayOfWeek[0] + slot.dayOfWeek.slice(1).toLowerCase()} ·{" "}
+                {formatClockTime(slot.startTime)}–
+                {formatClockTime(slot.endTime)}
+              </p>
+            </div>
+            {slot.batchOptions.length ? (
+              <span className="bg-primary-soft text-primary rounded-full px-2 py-1 text-[10px] font-bold">
+                {slot.batchOptions.join(" / ")}
+              </span>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <div className="hidden lg:block">
+        <WeeklyTimetableGrid
+          entries={entries}
+          days={draft.days}
+          timeSlots={draft.timeSlots}
+          ariaLabel="Selected schedule preview"
+        />
+      </div>
+    </div>
+  );
+}
 
 export function TimetableConfirmation({
   value,
@@ -60,6 +215,31 @@ export function TimetableConfirmation({
   ) => void;
   saving: boolean;
 }) {
+  const [review, setReview] = useState(false);
+  const [selectionSource, setSelectionSource] = useState(value);
+  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
+  const [customGroup, setCustomGroup] = useState("");
+  const [showCustomGroup, setShowCustomGroup] = useState(false);
+  const [reviewDraft, setReviewDraft] = useState(value);
+  const [reviewBaseSlotIds, setReviewBaseSlotIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [selectedSlotIds, setSelectedSlotIds] = useState<Set<string>>(
+    () =>
+      new Set(
+        value.timetableSlots
+          .filter(
+            (slot) =>
+              !slot.isBreak &&
+              !slot.isPlaceholder &&
+              slot.batchOptions.length === 0,
+          )
+          .map((slot) => slot.temporaryId),
+      ),
+  );
+  const [excludedSlotIds, setExcludedSlotIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const previewUrl = useMemo(
     () => (source ? URL.createObjectURL(source.file) : undefined),
     [source],
@@ -71,771 +251,482 @@ export function TimetableConfirmation({
     [previewUrl],
   );
 
-  const lowConfidenceCount =
-    value.ambiguousItems.filter(
-      (item) => item.confidence < 0.75 && !item.resolvedValue,
-    ).length +
-    value.subjects.filter((item) => item.confidence < 0.75).length +
-    value.timetableSlots.filter((item) => item.confidence < 0.75).length;
-  const steps = useMemo<ConfirmationStep[]>(
-    () => [
-      "UNCERTAIN",
-      ...(value.detectedBatchOptions.length ? (["BATCH"] as const) : []),
-      ...(value.detectedElectiveGroups.length ? (["ELECTIVES"] as const) : []),
-      "TYPES",
-      "REVIEW",
-    ],
-    [value.detectedBatchOptions.length, value.detectedElectiveGroups.length],
+  const groupOptions = useMemo(
+    () =>
+      normalizeSelectedGroups([
+        ...selectionSource.detectedBatchOptions,
+        ...selectionSource.timetableSlots.flatMap((slot) => slot.batchOptions),
+        ...selectedGroups,
+      ]),
+    [selectedGroups, selectionSource],
   );
-  const [stepIndex, setStepIndex] = useState(0);
-  const [batch, setBatch] = useState("");
-  const [customBatch, setCustomBatch] = useState("");
-  const [electives, setElectives] = useState<Record<string, string[]>>({});
-  const [electiveDecisions, setElectiveDecisions] = useState<
-    Record<string, ElectiveDecision>
-  >({});
-  const [customElectives, setCustomElectives] = useState<
-    Record<string, string>
-  >({});
-  const [tracked, setTracked] = useState<
-    Record<ClassType | "ZERO_CREDIT", boolean>
-  >({
-    THEORY: true,
-    LAB: false,
-    TUTORIAL: false,
-    SEMINAR: false,
-    PROJECT: false,
-    OTHER: false,
-    ZERO_CREDIT: false,
-  });
-  const [initialAttendance, setInitialAttendance] = useState<
-    Record<string, { held: number; attended: number }>
-  >({});
-  const step = steps[stepIndex];
-
-  const finalBatch =
-    batch === "CUSTOM"
-      ? customBatch.trim()
-      : batch.startsWith("_")
-        ? undefined
-        : batch;
-  const batchDecision: ConfirmationSelections["batchDecision"] =
-    value.detectedBatchOptions.length === 0
-      ? "NOT_ASKED"
-      : batch === "_NONE"
-        ? "NONE"
-        : batch === "_UNSURE"
-          ? "UNSURE"
-          : "SELECTED";
-  const batchInvalid = !batch || (batch === "CUSTOM" && !customBatch.trim());
-  const electiveInvalid = value.detectedElectiveGroups.some((group) => {
-    const decision = electiveDecisions[group.id];
-    return (
-      !decision ||
-      (decision === "SELECTED" && (electives[group.id] ?? []).length === 0)
-    );
-  });
-  const attendanceInvalid = Object.values(initialAttendance).some(
-    (entry) =>
-      !Number.isFinite(entry.held) ||
-      !Number.isFinite(entry.attended) ||
-      !Number.isInteger(entry.held) ||
-      !Number.isInteger(entry.attended) ||
-      entry.held < 0 ||
-      entry.attended < 0 ||
-      entry.attended > entry.held,
+  const groupedOptions = useMemo(() => {
+    const groups = new Map<string, string[]>();
+    for (const option of groupOptions) {
+      const family = /^([a-z]+)/i.exec(option)?.[1]?.toUpperCase();
+      const label = family ? `${family} groups` : "Other groups";
+      groups.set(label, [...(groups.get(label) ?? []), option]);
+    }
+    return [...groups.entries()];
+  }, [groupOptions]);
+  const uncertainSlots = selectionSource.timetableSlots.filter(
+    (slot) => !slot.isBreak && isUncertain(selectionSource, slot),
   );
-  const uncertainInvalid =
-    value.ambiguousItems.some(
-      (item) => item.confidence < 0.75 && !item.resolvedValue?.trim(),
-    ) ||
-    value.subjects.some((item) => item.confidence < 0.75) ||
-    value.timetableSlots.some((item) => item.confidence < 0.75);
+  const uncertainIds = new Set(uncertainSlots.map((slot) => slot.temporaryId));
+  const commonSubjects = selectionSource.subjects.flatMap((subject) => {
+    const slotIds = selectionSource.timetableSlots
+      .filter(
+        (slot) =>
+          slot.subjectTemporaryId === subject.temporaryId &&
+          !slot.isBreak &&
+          slot.batchOptions.length === 0 &&
+          !uncertainIds.has(slot.temporaryId),
+      )
+      .map((slot) => slot.temporaryId);
+    return slotIds.length ? [{ subject, slotIds }] : [];
+  });
+  const previewDraft = useMemo(
+    () =>
+      createPersonalTimetableDraft({
+        draft: selectionSource,
+        selectedGroups,
+        selectedSlotIds,
+        excludedSlotIds,
+      }),
+    [excludedSlotIds, selectedGroups, selectedSlotIds, selectionSource],
+  );
+  const selectedClassCount = previewDraft.timetableSlots.filter(
+    (slot) => !slot.isBreak && !slot.isPlaceholder,
+  ).length;
 
-  const addCustomElective = (groupId: string) => {
-    const name = customElectives[groupId]?.trim();
-    if (!name) return;
-    const temporaryId = crypto.randomUUID();
-    const shortName = name
-      .split(/\s+/)
-      .map((part) => part[0])
-      .join("")
-      .slice(0, 5)
-      .toUpperCase();
-    onChange({
-      ...value,
-      subjects: [
-        ...value.subjects,
-        {
-          temporaryId,
-          name,
-          shortName: shortName || name.slice(0, 5).toUpperCase(),
-          credits: 3,
-          classType: "THEORY",
-          faculty: [],
-          isZeroCredit: false,
-          confidence: 1,
-        },
-      ],
-      detectedElectiveGroups: value.detectedElectiveGroups.map((group) =>
-        group.id === groupId
-          ? {
-              ...group,
-              options: [
-                ...group.options,
-                { subjectTemporaryId: temporaryId, label: name },
-              ],
-            }
-          : group,
-      ),
+  const toggleSlotIds = (slotIds: readonly string[], checked: boolean) => {
+    setSelectedSlotIds((current) => {
+      const next = new Set(current);
+      for (const id of slotIds) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
     });
-    setElectives((current) => ({
-      ...current,
-      [groupId]: value.detectedElectiveGroups.find(
-        (group) => group.id === groupId,
-      )?.allowMultiple
-        ? [...(current[groupId] ?? []), temporaryId]
-        : [temporaryId],
-    }));
-    setElectiveDecisions((current) => ({ ...current, [groupId]: "SELECTED" }));
-    setCustomElectives((current) => ({ ...current, [groupId]: "" }));
+    setExcludedSlotIds((current) => {
+      const next = new Set(current);
+      for (const id of slotIds) {
+        if (checked) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  };
+  const toggleGroup = (group: string) => {
+    const normalized = normalizeGroupName(group);
+    setSelectedGroups((current) =>
+      current.some((item) => normalizeGroupName(item) === normalized)
+        ? current.filter((item) => normalizeGroupName(item) !== normalized)
+        : normalizeSelectedGroups([...current, group]),
+    );
+  };
+  const enterReview = () => {
+    const personalDraft = createPersonalTimetableDraft({
+      draft: selectionSource,
+      selectedGroups,
+      selectedSlotIds,
+      excludedSlotIds,
+    });
+    setReviewBaseSlotIds(
+      new Set(personalDraft.timetableSlots.map((slot) => slot.temporaryId)),
+    );
+    setReviewDraft(personalDraft);
+    onChange(personalDraft);
+    setReview(true);
+  };
+  const backToSelection = () => {
+    const merged = mergeReviewIntoSelectionSource({
+      source: selectionSource,
+      baseSlotIds: reviewBaseSlotIds,
+      edited: reviewDraft,
+    });
+    setSelectionSource(merged);
+    onChange(merged);
+    setSelectedSlotIds((current) => {
+      const next = new Set(current);
+      for (const id of reviewBaseSlotIds) next.delete(id);
+      for (const slot of reviewDraft.timetableSlots) {
+        if (!slot.isBreak && slot.batchOptions.length === 0) {
+          next.add(slot.temporaryId);
+        }
+      }
+      return next;
+    });
+    setReview(false);
+  };
+  const confirm = () => {
+    const groups = normalizeSelectedGroups(selectedGroups);
+    const electiveSubjectIds = Object.fromEntries(
+      reviewDraft.detectedElectiveGroups.map((group) => [
+        group.id,
+        group.options.map((option) => option.subjectTemporaryId),
+      ]),
+    );
+    onConfirm(reviewDraft, {
+      selectedGroups: groups,
+      batchDecision:
+        groupOptions.length === 0
+          ? "NOT_ASKED"
+          : groups.length
+            ? "SELECTED"
+            : "NONE",
+      batch: groups[0],
+      electiveSubjectIds,
+      tracked: trackedSelections(reviewDraft),
+      initialAttendance: {},
+    });
   };
 
   return (
     <div className="mx-auto grid w-full max-w-7xl gap-5">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div>
-          <p className="text-primary text-xs font-bold tracking-[0.16em] uppercase">
-            Confirm timetable
-          </p>
-          <h1 className="font-display mt-1 text-3xl font-extrabold tracking-tight sm:text-4xl">
-            Make it yours before it goes live
-          </h1>
-          <p className="text-muted-foreground mt-2 max-w-2xl text-sm leading-6">
-            Batch and elective questions appear only when they are present in
-            this timetable.
-          </p>
-        </div>
-        <Button variant="ghost" onClick={onBack}>
-          Back to builder
-        </Button>
-      </div>
+      <Progress review={review} />
 
-      <ol
-        className="scrollbar-none flex gap-2 overflow-x-auto pb-1"
-        aria-label="Timetable confirmation progress"
-      >
-        {steps.map((item, index) => (
-          <li
-            key={item}
-            className={cn(
-              "flex min-w-max items-center gap-2 rounded-full border px-3 py-2 text-xs font-bold",
-              index === stepIndex
-                ? "border-primary bg-primary-soft text-primary"
-                : index < stepIndex
-                  ? "border-safe-strong/20 bg-safe-soft text-safe-strong"
-                  : "border-border bg-surface text-muted-foreground",
-            )}
-          >
-            <span className="grid size-5 place-items-center rounded-full bg-current/10">
-              {index < stepIndex ? <Check className="size-3" /> : index + 1}
-            </span>
-            {stepLabels[item]}
-          </li>
-        ))}
-      </ol>
-
-      <Card className="p-5 sm:p-7">
-        {step === "UNCERTAIN" ? (
-          <div className="grid gap-5">
-            <div className="flex items-start gap-3">
-              <span className="bg-warning-soft text-warning-strong grid size-10 place-items-center rounded-xl">
-                <CircleAlert className="size-5" />
-              </span>
-              <div>
-                <h2 className="text-xl font-extrabold">
-                  Review uncertain details
-                </h2>
-                <p className="text-muted-foreground mt-1 text-sm">
-                  Items below 75% confidence are never silently accepted.
+      {!review ? (
+        <>
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+            <div>
+              <p className="text-primary text-xs font-bold tracking-[0.16em] uppercase">
+                Your classes
+              </p>
+              <h1 className="font-display mt-1 text-3xl font-extrabold tracking-tight sm:text-4xl">
+                Which classes belong to you?
+              </h1>
+              <p className="text-muted-foreground mt-2 text-sm leading-6">
+                Select your groups and remove anything that is not part of your
+                schedule.
+              </p>
+              {source?.extractionMessage
+                ?.toLocaleLowerCase()
+                .includes("ai-assisted") ? (
+                <p className="bg-info-soft text-info-strong mt-3 inline-flex rounded-full px-3 py-1.5 text-xs font-bold">
+                  AI-assisted extraction. Check the classes below before
+                  continuing.
                 </p>
-              </div>
+              ) : null}
             </div>
-            {source?.extractionMessage ? (
-              <div className="bg-info-soft text-info-strong rounded-xl p-4 text-sm">
-                {source.extractionMessage}
-              </div>
-            ) : null}
-            {value.warnings.map((warning) => (
-              <div
-                key={warning}
-                className="bg-warning-soft text-warning-strong rounded-xl p-4 text-sm"
-              >
-                {warning}
-              </div>
-            ))}
-            {value.ambiguousItems.length ? (
-              <div className="grid gap-3">
-                {value.ambiguousItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className="border-border grid gap-3 rounded-xl border p-4 sm:grid-cols-[1fr_220px] sm:items-end"
-                  >
-                    <div>
-                      <p className="font-bold">{item.sourceDescription}</p>
-                      <p className="text-muted-foreground mt-1 text-sm">
-                        {item.field} · {Math.round(item.confidence * 100)}%
-                        confidence · Suggestions:{" "}
-                        {item.possibleValues.join(" / ") || "none"}
-                      </p>
-                    </div>
-                    <Field label="Correction or review note">
-                      <Input
-                        value={item.resolvedValue ?? ""}
-                        onChange={(event) =>
-                          onChange({
-                            ...value,
-                            ambiguousItems: value.ambiguousItems.map((entry) =>
-                              entry.id === item.id
-                                ? {
-                                    ...entry,
-                                    resolvedValue: event.target.value,
-                                  }
-                                : entry,
-                            ),
-                          })
-                        }
-                      />
-                    </Field>
+            <Button variant="ghost" onClick={onBack}>
+              Back
+            </Button>
+          </div>
+
+          <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+            <div className="grid content-start gap-5">
+              {commonSubjects.length ? (
+                <Card className="p-4 sm:p-5">
+                  <h2 className="font-extrabold">Common classes</h2>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    These apply to everyone and start selected.
+                  </p>
+                  <div className="mt-4 grid gap-2">
+                    {commonSubjects.map(({ subject, slotIds }) => {
+                      const checked = slotIds.every((id) =>
+                        selectedSlotIds.has(id),
+                      );
+                      return (
+                        <label
+                          key={subject.temporaryId}
+                          className={cn(
+                            "border-border flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border p-3 font-semibold transition",
+                            checked && "border-primary bg-primary-soft",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) =>
+                              toggleSlotIds(slotIds, event.target.checked)
+                            }
+                            className="accent-primary size-5"
+                          />
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm">
+                              {subject.name}
+                            </span>
+                            {subject.code ? (
+                              <span className="text-muted-foreground block text-xs font-normal">
+                                {subject.code}
+                              </span>
+                            ) : null}
+                          </span>
+                        </label>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="border-border bg-background rounded-2xl border border-dashed p-8 text-center">
-                <Sparkles className="text-primary mx-auto size-7" />
-                <h3 className="mt-3 font-bold">No ambiguous fields detected</h3>
-                <p className="text-muted-foreground mt-1 text-sm">
-                  You can still edit every class in the final review.
-                </p>
-              </div>
-            )}
-            {value.subjects.some((subject) => subject.confidence < 0.75) ? (
-              <div className="grid gap-2">
-                <h3 className="font-extrabold">Low-confidence subjects</h3>
-                {value.subjects
-                  .filter((subject) => subject.confidence < 0.75)
-                  .map((subject) => (
-                    <div
-                      key={subject.temporaryId}
-                      className="border-border flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center"
-                    >
-                      <div className="mr-auto">
-                        <p className="font-bold">{subject.name}</p>
-                        <p className="text-muted-foreground text-xs">
-                          {subject.code || "No code"} ·{" "}
-                          {Math.round(subject.confidence * 100)}% confidence
-                        </p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          onChange({
-                            ...value,
-                            subjects: value.subjects.map((entry) =>
-                              entry.temporaryId === subject.temporaryId
-                                ? { ...entry, confidence: 1 }
-                                : entry,
-                            ),
-                          })
-                        }
-                      >
-                        I reviewed this subject
-                      </Button>
-                    </div>
-                  ))}
-              </div>
-            ) : null}
-            {value.timetableSlots.some((slot) => slot.confidence < 0.75) ? (
-              <div className="grid gap-2">
-                <h3 className="font-extrabold">Low-confidence classes</h3>
-                {value.timetableSlots
-                  .filter((slot) => slot.confidence < 0.75)
-                  .map((slot) => {
-                    const subject = value.subjects.find(
-                      (entry) => entry.temporaryId === slot.subjectTemporaryId,
-                    );
-                    return (
-                      <div
-                        key={slot.temporaryId}
-                        className="border-border flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center"
-                      >
-                        <div className="mr-auto">
-                          <p className="font-bold">
-                            {subject?.name ??
-                              (slot.isBreak ? "Break" : "Unassigned class")}
-                          </p>
-                          <p className="text-muted-foreground text-xs">
-                            {slot.dayOfWeek} · {slot.startTime}–{slot.endTime} ·{" "}
-                            {Math.round(slot.confidence * 100)}% confidence
-                          </p>
+                </Card>
+              ) : null}
+
+              {groupedOptions.length ? (
+                <Card className="p-4 sm:p-5">
+                  <h2 className="font-extrabold">
+                    Choose your lab or tutorial groups
+                  </h2>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    You can choose more than one group.
+                  </p>
+                  <div className="mt-4 grid gap-4">
+                    {groupedOptions.map(([label, options]) => (
+                      <fieldset key={label}>
+                        <legend className="text-sm font-bold">{label}</legend>
+                        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                          {options.map((option) => {
+                            const checked = selectedGroups.some(
+                              (item) =>
+                                normalizeGroupName(item) ===
+                                normalizeGroupName(option),
+                            );
+                            return (
+                              <label
+                                key={option}
+                                className={cn(
+                                  "border-border flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border p-3 text-sm font-bold",
+                                  checked &&
+                                    "border-primary bg-primary-soft text-primary",
+                                )}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleGroup(option)}
+                                  className="accent-primary size-5"
+                                />
+                                {option}
+                              </label>
+                            );
+                          })}
                         </div>
+                      </fieldset>
+                    ))}
+                  </div>
+                  <div className="mt-4">
+                    {!showCustomGroup ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowCustomGroup(true)}
+                      >
+                        <Plus className="size-4" /> Add another group
+                      </Button>
+                    ) : (
+                      <div className="border-border grid gap-2 rounded-xl border border-dashed p-3 sm:grid-cols-[1fr_auto]">
+                        <Input
+                          aria-label="Custom group"
+                          value={customGroup}
+                          onChange={(event) =>
+                            setCustomGroup(event.target.value)
+                          }
+                          placeholder="For example, A3"
+                        />
                         <Button
                           variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            onChange({
-                              ...value,
-                              timetableSlots: value.timetableSlots.map(
-                                (entry) =>
-                                  entry.temporaryId === slot.temporaryId
-                                    ? { ...entry, confidence: 1 }
-                                    : entry,
-                              ),
-                            })
-                          }
+                          disabled={!customGroup.trim()}
+                          onClick={() => {
+                            setSelectedGroups((current) =>
+                              normalizeSelectedGroups([
+                                ...current,
+                                customGroup,
+                              ]),
+                            );
+                            setCustomGroup("");
+                            setShowCustomGroup(false);
+                          }}
                         >
-                          I reviewed this class
+                          Add group
                         </Button>
                       </div>
-                    );
-                  })}
-              </div>
-            ) : null}
-            {lowConfidenceCount > 0 ? (
-              <p className="text-warning-strong text-sm">
-                {lowConfidenceCount} low-confidence{" "}
-                {lowConfidenceCount === 1 ? "item remains" : "items remain"};
-                confirm them in the final editor.
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+                    )}
+                  </div>
+                </Card>
+              ) : null}
 
-        {step === "BATCH" ? (
-          <div className="mx-auto grid max-w-xl gap-5">
-            <div>
-              <h2 className="text-xl font-extrabold">
-                Which batch applies to you?
-              </h2>
-              <p className="text-muted-foreground mt-1 text-sm">
-                Only matching batch alternatives will be enabled.
-              </p>
-            </div>
-            <div className="grid gap-2">
-              {value.detectedBatchOptions.map((option) => (
-                <label
-                  key={option}
-                  className="border-border flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border p-3 font-semibold"
-                >
-                  <input
-                    type="radio"
-                    name="batch"
-                    value={option}
-                    checked={batch === option}
-                    onChange={() => setBatch(option)}
-                    className="accent-primary size-4"
-                  />
-                  {option}
-                </label>
-              ))}
-              <label className="border-border flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border p-3 font-semibold">
-                <input
-                  type="radio"
-                  name="batch"
-                  checked={batch === "_NONE"}
-                  onChange={() => setBatch("_NONE")}
-                  className="accent-primary size-4"
-                />
-                My timetable does not use batches
-              </label>
-              <label className="border-border flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border p-3 font-semibold">
-                <input
-                  type="radio"
-                  name="batch"
-                  checked={batch === "_UNSURE"}
-                  onChange={() => setBatch("_UNSURE")}
-                  className="accent-primary size-4"
-                />
-                I am not sure
-              </label>
-              <label className="border-border grid cursor-pointer gap-2 rounded-xl border p-3 font-semibold">
-                <span className="flex items-center gap-3">
-                  <input
-                    type="radio"
-                    name="batch"
-                    checked={batch === "CUSTOM"}
-                    onChange={() => setBatch("CUSTOM")}
-                    className="accent-primary size-4"
-                  />
-                  Enter another batch
-                </span>
-                {batch === "CUSTOM" ? (
-                  <Input
-                    autoFocus
-                    value={customBatch}
-                    onChange={(event) => setCustomBatch(event.target.value)}
-                    placeholder="Batch name"
-                  />
-                ) : null}
-              </label>
-            </div>
-          </div>
-        ) : null}
+              {uncertainSlots.length ? (
+                <Card className="p-4 sm:p-5">
+                  <h2 className="font-extrabold">Check these classes</h2>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    We were not completely sure about these classes.
+                  </p>
+                  <div className="mt-4 grid gap-2">
+                    {uncertainSlots.map((slot) => {
+                      const checked = previewDraft.timetableSlots.some(
+                        (entry) => entry.temporaryId === slot.temporaryId,
+                      );
+                      return (
+                        <label
+                          key={slot.temporaryId}
+                          className={cn(
+                            "border-border flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border p-3",
+                            checked && "border-primary bg-primary-soft",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) =>
+                              toggleSlotIds(
+                                [slot.temporaryId],
+                                event.target.checked,
+                              )
+                            }
+                            className="accent-primary size-5"
+                          />
+                          <span className="min-w-0 text-sm">
+                            <span className="block truncate font-bold">
+                              {classLabel(selectionSource, slot)}
+                            </span>
+                            <span className="text-muted-foreground block text-xs">
+                              {slot.dayOfWeek[0] +
+                                slot.dayOfWeek.slice(1).toLowerCase()}
+                              , {formatClockTime(slot.startTime)}
+                            </span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </Card>
+              ) : null}
 
-        {step === "ELECTIVES" ? (
-          <div className="grid gap-7">
-            <div>
-              <h2 className="text-xl font-extrabold">Choose your electives</h2>
-              <p className="text-muted-foreground mt-1 text-sm">
-                Alternatives stay preserved in the timetable history.
-              </p>
+              {source?.extractionMessage ||
+              selectionSource.warnings.length ||
+              selectionSource.ambiguousItems.length ? (
+                <details className="border-border bg-surface rounded-2xl border p-4">
+                  <summary className="cursor-pointer text-sm font-bold">
+                    Something looks wrong
+                  </summary>
+                  <div className="text-muted-foreground mt-3 grid gap-2 text-xs leading-5">
+                    {source?.extractionMessage ? (
+                      <p>{source.extractionMessage}</p>
+                    ) : null}
+                    {selectionSource.warnings.map((warning) => (
+                      <p key={warning}>{warning}</p>
+                    ))}
+                    {selectionSource.ambiguousItems.map((item) => (
+                      <p key={item.id}>{item.sourceDescription}</p>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
             </div>
-            {value.detectedElectiveGroups.map((group) => (
-              <fieldset
-                key={group.id}
-                className="border-border grid gap-2 rounded-2xl border p-4"
-              >
-                <legend className="px-2 font-extrabold">{group.name}</legend>
-                {group.options.map((option) => {
-                  const checked = (electives[group.id] ?? []).includes(
-                    option.subjectTemporaryId,
-                  );
-                  return (
-                    <label
-                      key={option.subjectTemporaryId}
-                      className="bg-secondary flex min-h-11 cursor-pointer items-center gap-3 rounded-xl p-3 text-sm font-semibold"
-                    >
-                      <input
-                        type={group.allowMultiple ? "checkbox" : "radio"}
-                        name={group.id}
-                        checked={checked}
-                        onChange={() => {
-                          const selected = group.allowMultiple
-                            ? checked
-                              ? (electives[group.id] ?? []).filter(
-                                  (id) => id !== option.subjectTemporaryId,
-                                )
-                              : [
-                                  ...(electives[group.id] ?? []),
-                                  option.subjectTemporaryId,
-                                ]
-                            : [option.subjectTemporaryId];
-                          setElectives((current) => ({
-                            ...current,
-                            [group.id]: selected,
-                          }));
-                          setElectiveDecisions((current) => ({
-                            ...current,
-                            [group.id]:
-                              selected.length > 0
-                                ? "SELECTED"
-                                : current[group.id],
-                          }));
-                        }}
-                        className="accent-primary size-4"
-                      />
-                      {option.label}
-                    </label>
-                  );
-                })}
-                <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl p-3 text-sm font-semibold">
-                  <input
-                    type="radio"
-                    name={group.id}
-                    checked={electiveDecisions[group.id] === "NONE"}
-                    onChange={() => {
-                      setElectives((current) => ({
-                        ...current,
-                        [group.id]: [],
-                      }));
-                      setElectiveDecisions((current) => ({
-                        ...current,
-                        [group.id]: "NONE",
-                      }));
-                    }}
-                    className="accent-primary size-4"
-                  />
-                  None
-                </label>
-                <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl p-3 text-sm font-semibold">
-                  <input
-                    type="radio"
-                    name={group.id}
-                    checked={electiveDecisions[group.id] === "UNSURE"}
-                    onChange={() => {
-                      setElectives((current) => ({
-                        ...current,
-                        [group.id]: [],
-                      }));
-                      setElectiveDecisions((current) => ({
-                        ...current,
-                        [group.id]: "UNSURE",
-                      }));
-                    }}
-                    className="accent-primary size-4"
-                  />
-                  I am not sure
-                </label>
-                <div className="border-border grid gap-2 rounded-xl border border-dashed p-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                  <Field label="Enter another subject">
-                    <Input
-                      value={customElectives[group.id] ?? ""}
-                      onChange={(event) =>
-                        setCustomElectives((current) => ({
-                          ...current,
-                          [group.id]: event.target.value,
-                        }))
-                      }
-                      placeholder="Subject name"
-                    />
-                  </Field>
-                  <Button
-                    variant="outline"
-                    disabled={!customElectives[group.id]?.trim()}
-                    onClick={() => addCustomElective(group.id)}
+
+            <Card className="min-w-0 p-4 sm:p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="font-extrabold">Your schedule</h2>
+                  <p
+                    className="text-primary mt-1 text-sm font-bold"
+                    aria-live="polite"
                   >
-                    Add & select
-                  </Button>
+                    {selectedClassCount} classes selected
+                  </p>
                 </div>
-              </fieldset>
-            ))}
-          </div>
-        ) : null}
-
-        {step === "TYPES" ? (
-          <div className="grid gap-5">
-            <div>
-              <h2 className="text-xl font-extrabold">
-                What should count toward attendance?
-              </h2>
-              <p className="text-muted-foreground mt-1 text-sm">
-                Theory starts enabled. Labs, projects, and zero-credit subjects
-                are opt-in.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {(
-                [
-                  "THEORY",
-                  "LAB",
-                  "TUTORIAL",
-                  "SEMINAR",
-                  "PROJECT",
-                  "ZERO_CREDIT",
-                ] as const
-              ).map((type) => (
-                <Switch
-                  key={type}
-                  checked={tracked[type]}
-                  onChange={(checked) =>
-                    setTracked((current) => ({ ...current, [type]: checked }))
-                  }
-                  label={
-                    type === "ZERO_CREDIT"
-                      ? "Zero-credit subjects"
-                      : `${type[0]}${type.slice(1).toLowerCase()}${type === "THEORY" ? " classes" : "s"}`
-                  }
-                  description={
-                    type === "PROJECT"
-                      ? "Static placeholders remain ignored"
-                      : undefined
-                  }
-                />
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        {step === "REVIEW" ? (
-          <div className="grid gap-6">
-            <div>
-              <h2 className="text-xl font-extrabold">Final timetable review</h2>
-              <p className="text-muted-foreground mt-1 text-sm">
-                Add, move, duplicate, disable, or correct any class. It becomes
-                active only when you confirm below.
-              </p>
-            </div>
-            {source && previewUrl ? (
-              <details
-                className="border-border bg-background rounded-2xl border p-4"
-                open
-              >
-                <summary className="flex cursor-pointer items-center gap-2 font-bold">
-                  <ImageIcon className="text-primary size-4" /> Compare with
-                  uploaded source
-                </summary>
-                <div className="bg-secondary mt-4 grid max-h-[420px] place-items-center overflow-hidden rounded-xl p-3">
-                  {source.file.type === "application/pdf" ? (
-                    <object
-                      data={previewUrl}
-                      type="application/pdf"
-                      className="h-[380px] w-full rounded-lg bg-white"
-                      aria-label="Original timetable PDF"
-                    />
-                  ) : (
-                    // The source is a private, in-memory object URL and cannot use Next's optimizer.
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={previewUrl}
-                      alt="Original uploaded timetable"
-                      className="max-h-[390px] max-w-full object-contain"
-                      style={{
-                        transform: `rotate(${source.edits.rotation}deg) scale(${Math.min(source.edits.zoom, 1.2)})`,
-                        clipPath: `inset(${source.edits.crop.top}% ${source.edits.crop.right}% ${source.edits.crop.bottom}% ${source.edits.crop.left}%)`,
-                      }}
-                    />
-                  )}
-                </div>
-              </details>
-            ) : null}
-            <DraftEditor value={value} onChange={onChange} />
-
-            <div className="border-border bg-background rounded-2xl border p-4 sm:p-5">
-              <h3 className="font-extrabold">Joining mid-semester?</h3>
-              <p className="text-muted-foreground mt-1 text-sm">
-                Enter counts—not a percentage. Leave both at zero for a new
-                semester.
-              </p>
-              <div className="mt-4 grid gap-2">
-                {value.subjects
-                  .filter(
-                    (subject) => !subject.isZeroCredit || tracked.ZERO_CREDIT,
-                  )
-                  .map((subject) => {
-                    const entry = initialAttendance[subject.temporaryId] ?? {
-                      held: 0,
-                      attended: 0,
-                    };
-                    const heldInvalid =
-                      !Number.isFinite(entry.held) ||
-                      !Number.isInteger(entry.held) ||
-                      entry.held < 0;
-                    const attendedInvalid =
-                      !Number.isFinite(entry.attended) ||
-                      !Number.isInteger(entry.attended) ||
-                      entry.attended < 0 ||
-                      entry.attended > entry.held;
-                    return (
-                      <div
-                        key={subject.temporaryId}
-                        className="bg-surface grid gap-2 rounded-xl p-3 sm:grid-cols-[1fr_120px_120px] sm:items-center"
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-bold">
-                            {subject.name}
-                          </p>
-                          <p className="text-muted-foreground text-xs">
-                            {subject.code || subject.shortName}
-                          </p>
-                        </div>
-                        <Field
-                          label="Classes held"
-                          error={
-                            heldInvalid
-                              ? "Use a whole count of 0 or more"
-                              : undefined
-                          }
-                        >
-                          <Input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={entry.held}
-                            onChange={(event) =>
-                              setInitialAttendance((current) => ({
-                                ...current,
-                                [subject.temporaryId]: {
-                                  ...entry,
-                                  held: Number(event.target.value),
-                                },
-                              }))
-                            }
-                          />
-                        </Field>
-                        <Field
-                          label="Attended"
-                          error={
-                            attendedInvalid
-                              ? entry.attended > entry.held
-                                ? "Cannot exceed held"
-                                : "Use a whole count of 0 or more"
-                              : undefined
-                          }
-                        >
-                          <Input
-                            type="number"
-                            min="0"
-                            step="1"
-                            max={entry.held}
-                            value={entry.attended}
-                            onChange={(event) =>
-                              setInitialAttendance((current) => ({
-                                ...current,
-                                [subject.temporaryId]: {
-                                  ...entry,
-                                  attended: Number(event.target.value),
-                                },
-                              }))
-                            }
-                          />
-                        </Field>
-                      </div>
-                    );
-                  })}
               </div>
-            </div>
+              <div className="mt-4">
+                {selectedClassCount ? (
+                  <CompactSchedulePreview draft={previewDraft} />
+                ) : (
+                  <div className="border-border text-muted-foreground rounded-xl border border-dashed p-8 text-center text-sm">
+                    Select at least one class to continue.
+                  </div>
+                )}
+              </div>
+            </Card>
           </div>
-        ) : null}
-      </Card>
 
-      <div className="border-border bg-background/95 sticky bottom-0 -mx-4 flex flex-col-reverse gap-2 border-t px-4 pt-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] backdrop-blur sm:mx-0 sm:flex-row sm:items-center sm:justify-between sm:rounded-2xl sm:border sm:px-4">
-        <Button
-          variant="ghost"
-          className="w-full sm:w-auto"
-          disabled={stepIndex === 0 || saving}
-          onClick={() => setStepIndex((index) => Math.max(0, index - 1))}
-        >
-          <ArrowLeft className="size-4" /> Previous
-        </Button>
-        {step === "REVIEW" ? (
-          <Button
-            size="lg"
-            className="w-full sm:w-auto"
-            disabled={
-              saving || attendanceInvalid || value.timetableSlots.length === 0
-            }
-            onClick={() =>
-              onConfirm(value, {
-                batchDecision,
-                batch: finalBatch,
-                electiveSubjectIds: electives,
-                tracked,
-                initialAttendance,
-              })
-            }
-            data-testid="confirm-timetable"
-          >
-            {saving ? "Saving locally…" : "Confirm & open AttendSafe"}
-            <Check className="size-5" />
-          </Button>
-        ) : (
-          <Button
-            className="w-full sm:w-auto"
-            disabled={
-              (step === "UNCERTAIN" && uncertainInvalid) ||
-              (step === "BATCH" && batchInvalid) ||
-              (step === "ELECTIVES" && electiveInvalid) ||
-              saving
-            }
-            onClick={() =>
-              setStepIndex((index) => Math.min(steps.length - 1, index + 1))
-            }
-          >
-            Continue <ArrowRight className="size-4" />
-          </Button>
-        )}
-      </div>
+          <div className="border-border bg-background/95 sticky bottom-0 -mx-4 flex flex-col-reverse gap-2 border-t px-4 py-3 backdrop-blur sm:mx-0 sm:flex-row sm:items-center sm:justify-between sm:rounded-2xl sm:border">
+            <Button variant="ghost" onClick={onBack}>
+              <ArrowLeft className="size-4" /> Back
+            </Button>
+            <Button
+              size="lg"
+              disabled={selectedClassCount === 0}
+              onClick={enterReview}
+            >
+              Review schedule <ArrowRight className="size-5" />
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div>
+            <p className="text-primary text-xs font-bold tracking-[0.16em] uppercase">
+              Review
+            </p>
+            <h1 className="font-display mt-1 text-3xl font-extrabold tracking-tight sm:text-4xl">
+              Review your schedule
+            </h1>
+            <p className="text-muted-foreground mt-2 text-sm leading-6">
+              Tap a class to edit it or remove anything that does not belong.
+            </p>
+          </div>
+
+          {source && previewUrl ? (
+            <details className="border-border bg-surface rounded-2xl border p-4">
+              <summary className="flex cursor-pointer items-center gap-2 text-sm font-bold">
+                <ImageIcon className="text-primary size-4" /> Compare with your
+                upload
+              </summary>
+              <div className="bg-secondary mt-4 grid max-h-[420px] place-items-center overflow-hidden rounded-xl p-3">
+                {source.file.type === "application/pdf" ? (
+                  <object
+                    data={previewUrl}
+                    type="application/pdf"
+                    className="h-[380px] w-full rounded-lg bg-white"
+                    aria-label="Original timetable PDF"
+                  />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={previewUrl}
+                    alt="Original uploaded timetable"
+                    className="max-h-[390px] max-w-full object-contain"
+                    style={{
+                      transform: `rotate(${source.edits.rotation}deg) scale(${Math.min(source.edits.zoom, 1.2)})`,
+                      clipPath: `inset(${source.edits.crop.top}% ${source.edits.crop.right}% ${source.edits.crop.bottom}% ${source.edits.crop.left}%)`,
+                    }}
+                  />
+                )}
+              </div>
+            </details>
+          ) : null}
+
+          <Card className="min-w-0 p-3 sm:p-5">
+            <DraftEditor
+              value={reviewDraft}
+              onChange={(next) => {
+                setReviewDraft(next);
+                onChange(next);
+              }}
+              compact
+              fixedView="GRID"
+              simple
+            />
+          </Card>
+
+          <div className="border-border bg-background/95 sticky bottom-0 -mx-4 flex flex-col-reverse gap-2 border-t px-4 py-3 backdrop-blur sm:mx-0 sm:flex-row sm:items-center sm:justify-between sm:rounded-2xl sm:border">
+            <Button variant="ghost" onClick={backToSelection} disabled={saving}>
+              <ArrowLeft className="size-4" /> Back to class selection
+            </Button>
+            <Button
+              size="lg"
+              disabled={
+                saving ||
+                reviewDraft.timetableSlots.every(
+                  (slot) => slot.isBreak || slot.isPlaceholder,
+                )
+              }
+              onClick={confirm}
+              data-testid="confirm-timetable"
+            >
+              {saving ? "Saving locally…" : "Start tracking attendance"}
+              <Check className="size-5" />
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

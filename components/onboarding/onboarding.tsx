@@ -24,6 +24,7 @@ import { useAttendSafeData } from "@/hooks/use-attendsafe-data";
 import { AttendanceUnavailableState } from "@/components/attendance/data-state";
 import { parseSemesterExceptionEntries } from "@/lib/academic-exception-input";
 import { DEMO_IDS } from "@/lib/demo";
+import { normalizeSelectedGroups } from "@/lib/timetable";
 import type { NormalizedTimetableDraft } from "@/types";
 import { DAYS_OF_WEEK } from "@/types";
 import { DraftEditor } from "../timetable/draft-editor";
@@ -62,6 +63,20 @@ export function resolvedOnboardingBatch(
   if (selections.batchDecision === "SELECTED")
     return selections.batch?.trim() || undefined;
   return undefined;
+}
+
+export function resolvedOnboardingGroups(
+  selections: Pick<
+    ConfirmationSelections,
+    "selectedGroups" | "batchDecision" | "batch"
+  >,
+  setupBatch?: string,
+): string[] {
+  if (selections.selectedGroups !== undefined) {
+    return normalizeSelectedGroups(selections.selectedGroups);
+  }
+  const legacy = resolvedOnboardingBatch(selections, setupBatch);
+  return legacy ? [legacy] : [];
 }
 
 function timetableInput(
@@ -226,7 +241,8 @@ export function Onboarding() {
     if (!setup) return;
     setSaving(true);
     try {
-      const selectedBatch = resolvedOnboardingBatch(selections, setup.batch);
+      const selectedGroups = resolvedOnboardingGroups(selections, setup.batch);
+      const selectedBatch = selectedGroups[0];
       const timetableDays = new Set([
         ...finalDraft.days,
         ...finalDraft.timetableSlots.map((slot) => slot.dayOfWeek),
@@ -250,6 +266,7 @@ export function Onboarding() {
           course: setup.course || undefined,
           section: setup.section || undefined,
           batch: selectedBatch,
+          batches: selectedGroups,
           timezone: setup.timezone,
           weekStartsOn: setup.weekStartsOn,
         },
@@ -294,6 +311,7 @@ export function Onboarding() {
       );
       await attendSafeRepository.updateSettings({
         selectedBatch,
+        selectedBatches: selectedGroups,
         trackedClassTypes: {
           THEORY: selections.tracked.THEORY,
           LAB: selections.tracked.LAB,
@@ -370,7 +388,9 @@ export function Onboarding() {
               edits: nextSource.edits,
               extractionMessage: nextSource.extractionMessage,
             });
-            setStage("CONFIRM");
+            setStage(
+              nextDraft.timetableSlots.length > 0 ? "CONFIRM" : "MANUAL",
+            );
           }}
         />
       </OnboardingCanvas>

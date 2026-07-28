@@ -74,6 +74,7 @@ export interface Profile extends TimestampedEntity {
   course?: string;
   section?: string;
   batch?: string;
+  batches?: string[];
   timezone: string;
   weekStartsOn: WeekStartPreference;
 }
@@ -208,6 +209,7 @@ export interface AppSettings {
   activeSemesterId?: string;
   theme: ThemePreference;
   selectedBatch?: string;
+  selectedBatches?: string[];
   trackedClassTypes: Record<ClassType, boolean>;
   includeZeroCredit?: boolean;
   offlineReady: boolean;
