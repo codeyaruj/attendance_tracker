@@ -97,7 +97,7 @@ export function ProfileSemesterForm({
     handleSubmit,
     setValue,
     control,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = useForm<ProfileSetupInput, unknown, ProfileSetupValues>({
     resolver: zodResolver(setupSchema),
     defaultValues: {
@@ -151,6 +151,7 @@ export function ProfileSemesterForm({
         onSubmit={handleSubmit(onContinue)}
         className="grid gap-5"
         data-testid="profile-setup-form"
+        data-pwa-critical-operation={isDirty ? "true" : undefined}
       >
         <Card className="p-5 sm:p-6">
           <div className="mb-5 flex items-center gap-3">

@@ -1,4 +1,4 @@
-const BUILD_ID = "89312a2da52811d9a8e574ef392b32bd";
+const BUILD_ID = "__ATTENDSAFE_BUILD_ID__";
 const CACHE_VERSION = `build-${BUILD_ID}`;
 const SHELL_CACHE = `attendsafe-shell-${CACHE_VERSION}`;
 const STATIC_CACHE = `attendsafe-static-${CACHE_VERSION}`;

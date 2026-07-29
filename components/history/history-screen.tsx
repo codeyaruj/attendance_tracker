@@ -353,7 +353,15 @@ export function HistoryScreen() {
   );
 
   return (
-    <div className="grid gap-5" data-testid="history-page">
+    <div
+      className="grid gap-5"
+      data-testid="history-page"
+      data-pwa-critical-operation={
+        bulkBusy || editBusy || resetBusy || Boolean(undoingId)
+          ? "true"
+          : undefined
+      }
+    >
       <section className="grid grid-cols-3 gap-3" aria-label="History summary">
         <Card className="p-4">
           <CalendarRange className="text-primary size-5" aria-hidden="true" />

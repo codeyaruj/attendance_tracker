@@ -94,6 +94,7 @@ export function SessionChangeDialog({
         className="grid gap-4"
         onSubmit={handleSubmit((values) => void onSubmit(values))}
         data-testid="session-change-form"
+        data-pwa-critical-operation="true"
       >
         <Field label="Change type">
           <Select {...register("kind")}>

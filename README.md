@@ -169,14 +169,14 @@ Backups are the portability mechanism. Clearing browser storage, using private b
 
 ## PWA and offline behavior
 
-`app/manifest.ts`, `public/sw.js`, and purpose-built icons provide installability and app-shell caching. The worker uses versioned, positive allowlists:
+`app/manifest.ts`, the generated `public/sw.js`, and purpose-built icons provide installability and app-shell caching. Every build derives a stable build ID from the Cloudflare commit SHA, another CI/Git SHA, or a deterministic source hash. The same ID is compiled into the client and published in no-store `/version.json`, so update detection does not depend only on a waiting worker. The worker uses build-namespaced, positive allowlists:
 
 - known navigation routes use network-first with a cached shell fallback;
-- immutable Next.js and icon assets use cache-first;
+- immutable hashed Next.js assets use cache-first;
 - locally hosted OCR/PDF worker, WASM, and language files cache on first use;
 - API paths, unknown routes, backups, attachments, non-GET requests, failed/opaque responses, and responses marked `private` or `no-store` are never cached.
 
-Uploaded images, PDFs, object URLs, data URLs, backups, and other user-generated files never enter Cache Storage. IndexedDB is not cleared during worker installation, activation, updates, or offline-cache clearing. Waiting updates show an explicit **Update now / Later** notice and will not activate while OCR, backup import/export, or database recovery is active.
+Uploaded images, PDFs, object URLs, data URLs, backups, and other user-generated files never enter Cache Storage. IndexedDB is not cleared during worker installation, activation, updates, or offline-cache clearing. Waiting-worker or deployed-version updates show an explicit **Update now / Later** notice on every route and will not reload while attendance, timetable editing, OCR, backup import/export, or database recovery is active. See [PWA application updates](docs/PWA_UPDATES.md) for generation, lifecycle, diagnostics, and a local two-build procedure.
 
 After the application shell has been cached, timetable viewing/editing, attendance marking, calculations, and JSON backup generation continue offline. A first visit and the first OCR asset download still need a connection. If a required resource was not cached completely, reconnect and retry.
 
@@ -271,7 +271,7 @@ JSON export/import for device transfer
 
 ## Production security headers
 
-Cloudflare Pages copies `public/_headers` into `out/_headers`. It defines CSP, clickjacking protection, MIME-sniffing protection, referrer and permissions policies, HSTS, cross-origin opener isolation, and a no-cache policy for `sw.js`.
+Cloudflare Pages copies `public/_headers` into `out/_headers`. It defines CSP, clickjacking protection, MIME-sniffing protection, referrer and permissions policies, HSTS, cross-origin opener isolation, and no-store policies for `sw.js` and `version.json`.
 
 The CSP is intentionally same-origin. Next.js currently requires `'unsafe-inline'` for its generated inline bootstrap scripts and styles. Tesseract's local WASM requires the narrower `'wasm-unsafe-eval'`; ordinary `'unsafe-eval'`, wildcard sources, arbitrary HTTPS sources, and third-party script providers are not allowed. `worker-src 'self' blob:` is needed by Tesseract's local worker, while `img-src 'self' data: blob:` supports local previews without uploading them.
 

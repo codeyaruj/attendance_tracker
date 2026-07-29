@@ -448,7 +448,15 @@ export function TodayScreen() {
   }).format(new Date(`${today}T12:00:00`));
 
   return (
-    <div className="grid gap-5" data-testid="today-page">
+    <div
+      className="grid gap-5"
+      data-testid="today-page"
+      data-pwa-critical-operation={
+        pendingIds.size > 0 || bulkBusy || changeBusy || Boolean(undoingId)
+          ? "true"
+          : undefined
+      }
+    >
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <Card className="bg-primary text-primary-foreground overflow-hidden">
           <div className="p-5 sm:p-6">

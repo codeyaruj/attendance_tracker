@@ -221,7 +221,12 @@ export function SlotFormDialog({
           : "Custom times, alternatives, batches, and alternating weeks are all supported."
       }
     >
-      <form onSubmit={submit} className="grid gap-5" data-testid="slot-form">
+      <form
+        onSubmit={submit}
+        className="grid gap-5"
+        data-testid="slot-form"
+        data-pwa-critical-operation="true"
+      >
         {subjects.length > 0 ? (
           <Field label="Use a subject">
             <Select

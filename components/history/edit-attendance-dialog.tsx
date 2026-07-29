@@ -58,6 +58,7 @@ export function EditAttendanceDialog({
       <form
         className="grid gap-4"
         onSubmit={handleSubmit((values) => void onSave(values))}
+        data-pwa-critical-operation="true"
       >
         <Field
           label="Attendance status"

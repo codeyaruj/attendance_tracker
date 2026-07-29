@@ -53,11 +53,18 @@ describe("static PWA configuration", () => {
     expect(headers).toContain("Strict-Transport-Security:");
     expect(headers).not.toMatch(/default-src\s+\*/);
     expect(headers).not.toContain("'unsafe-eval'");
+    expect(headers).toMatch(
+      /\/version\.json[\s\S]*Cache-Control: no-cache, no-store, must-revalidate/,
+    );
   });
 
   it("uses positive cache allowlists and protects private content", async () => {
     const worker = await readFile("public/sw.js", "utf8");
-    expect(worker).toContain('const CACHE_VERSION = "v5"');
+    const version = JSON.parse(
+      await readFile("public/version.json", "utf8"),
+    ) as { buildId: string };
+    expect(worker).toContain(`const BUILD_ID = "${version.buildId}"`);
+    expect(worker).toContain("const CACHE_VERSION = `build-${BUILD_ID}`");
     expect(worker).toContain('url.pathname.startsWith("/api/")');
     expect(worker).toContain('cacheControl.includes("no-store")');
     expect(worker).toContain('cacheControl.includes("private")');
@@ -68,6 +75,9 @@ describe("static PWA configuration", () => {
     expect(worker).toContain('url.pathname.includes("backup")');
     expect(worker).toContain("ownedCache(name) && !ACTIVE_CACHES.has(name)");
     expect(worker).toContain('event.data?.type === "SKIP_WAITING"');
+    expect(worker).toContain('url.pathname === "/sw.js"');
+    expect(worker).toContain('url.pathname === "/version.json"');
+    expect(worker).toContain('fetch(request, { cache: "no-store" })');
     expect(worker).not.toContain(
       "caches.keys().then((keys) => Promise.all(keys.map",
     );

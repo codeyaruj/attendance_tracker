@@ -12,6 +12,7 @@ const required = [
   "settings/index.html",
   "manifest.webmanifest",
   "sw.js",
+  "version.json",
   "_headers",
   "icons/icon-192.png",
   "icons/icon-512.png",

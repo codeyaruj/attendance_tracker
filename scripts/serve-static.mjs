@@ -63,7 +63,7 @@ const server = createServer(async (request, response) => {
       ...securityHeaders,
       "Content-Type": contentTypes[extname(file)] ?? "application/octet-stream",
     };
-    if (url.pathname === "/sw.js") {
+    if (url.pathname === "/sw.js" || url.pathname === "/version.json") {
       headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
     }
     response.writeHead(200, headers);

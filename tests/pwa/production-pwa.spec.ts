@@ -110,13 +110,20 @@ test("real local records survive reload, offline writes, backup, worker update, 
     return Boolean(registration.waiting);
   });
   expect(updateReady).toBe(true);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.getByText("A new version is available.")).toBeVisible();
+  let updateReloads = 0;
+  const countUpdateReload = () => {
+    updateReloads += 1;
+  };
+  page.on("load", countUpdateReload);
   await Promise.all([
     page.waitForEvent("load"),
-    page.evaluate(async () => {
-      const registration = await navigator.serviceWorker.getRegistration("/");
-      registration?.waiting?.postMessage({ type: "SKIP_WAITING" });
-    }),
+    page.getByRole("button", { name: "Update now" }).click(),
   ]);
+  await page.waitForTimeout(500);
+  page.off("load", countUpdateReload);
+  expect(updateReloads).toBe(1);
   await expect.poll(() => storeCount(page, "attendanceRecords")).toBe(1);
   const postUpdateCaches = await page.evaluate(() => caches.keys());
   expect(postUpdateCaches).not.toContain("attendsafe-shell-obsolete-test");
@@ -138,6 +145,40 @@ test("real local records survive reload, offline writes, backup, worker update, 
   expect(await storeCount(page, "profiles")).toBeGreaterThan(0);
   expect(await storeCount(page, "timetableSlots")).toBeGreaterThan(0);
   expect(await storeCount(page, "attendanceRecords")).toBe(1);
+});
+
+test("version mismatch is visible on root and Later resurfaces on the next check", async ({
+  page,
+}) => {
+  await page.route("**/version.json?*", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        buildId: "playwright-deployed-build-b",
+        builtAt: "2026-07-29T12:00:00.000Z",
+      }),
+    }),
+  );
+  await page.goto("/");
+  await waitForControl(page);
+
+  const notice = page.getByRole("complementary", {
+    name: "Application notice",
+  });
+  await expect(notice).toContainText("A new version is available.");
+  await notice.getByRole("button", { name: "Later" }).click();
+  await expect(notice).toBeHidden();
+
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(notice).toContainText("A new version is available.");
+});
+
+test("the current build and first service-worker installation do not prompt", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await waitForControl(page);
+  await expect(page.getByText("A new version is available.")).toBeHidden();
 });
 
 test("local records survive closing and reopening the application page", async ({
@@ -238,6 +279,13 @@ test("static metadata, icons, and production header policy are present", async (
   for (const icon of value.icons) {
     expect((await page.request.get(icon.src)).ok()).toBe(true);
   }
+
+  const version = await page.request.get("/version.json");
+  expect(version.ok()).toBe(true);
+  expect(version.headers()["cache-control"]).toBe(
+    "no-cache, no-store, must-revalidate",
+  );
+  expect((await version.json()).buildId).toBeTruthy();
 
   const headersFile = await readFile("out/_headers", "utf8");
   expect(headersFile).toContain("Strict-Transport-Security");

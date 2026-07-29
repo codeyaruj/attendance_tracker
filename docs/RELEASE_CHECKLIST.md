@@ -31,9 +31,11 @@
 
 - [ ] Manifest/icons resolve from the permanent HTTPS origin.
 - [ ] First online load becomes service-worker controlled.
+- [ ] `out/sw.js`, `out/version.json`, and the compiled client share the deployed commit build ID.
 - [ ] Subjects, timetable, attendance viewing/writes, settings, and backup export work offline.
 - [ ] Reload, close/reopen, cache deletion, and a real two-deployment worker update preserve IndexedDB.
-- [ ] Waiting update prompts once and critical OCR/backup/recovery delays activation.
+- [ ] Waiting-worker and version-mismatch updates prompt on setup and local-data routes; Later resurfaces on a later check.
+- [ ] Critical attendance/timetable/OCR/backup/recovery work delays activation and reload.
 - [ ] Cache Storage contains static assets only; unrelated caches survive migration.
 - [ ] First-use OCR asset/network limitation is communicated.
 

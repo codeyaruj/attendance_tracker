@@ -430,7 +430,10 @@ export function TimetableConfirmation({
   };
 
   return (
-    <div className="mx-auto grid w-full max-w-7xl min-w-0 gap-5">
+    <div
+      className="mx-auto grid w-full max-w-7xl min-w-0 gap-5"
+      data-pwa-critical-operation="true"
+    >
       <Progress review={review} />
 
       {!review ? (

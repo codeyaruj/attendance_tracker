@@ -400,7 +400,10 @@ export function Onboarding() {
   if (stage === "MANUAL" && setup) {
     return (
       <OnboardingCanvas>
-        <div className="mx-auto grid w-full max-w-7xl gap-5">
+        <div
+          className="mx-auto grid w-full max-w-7xl gap-5"
+          data-pwa-critical-operation="true"
+        >
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
             <div>
               <p className="text-primary text-xs font-bold tracking-[0.16em] uppercase">

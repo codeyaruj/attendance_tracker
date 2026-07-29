@@ -745,7 +745,7 @@ export function TimetableScreen() {
         }
       >
         {selectedSlot ? (
-          <div className="grid gap-5">
+          <div className="grid gap-5" data-pwa-critical-operation="true">
             <div className="bg-secondary/65 grid gap-3 rounded-2xl p-4 sm:grid-cols-2">
               <p className="flex items-center gap-2 text-sm">
                 <Clock3 className="text-primary size-4" />{" "}
@@ -877,7 +877,7 @@ export function TimetableScreen() {
         description="Tap any class to edit, move, duplicate, or delete it. Saving creates a dated version so attendance history stays intact."
       >
         {draft ? (
-          <div className="grid gap-5">
+          <div className="grid gap-5" data-pwa-critical-operation="true">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Version label">
                 <Input

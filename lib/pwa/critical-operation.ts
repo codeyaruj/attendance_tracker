@@ -24,7 +24,11 @@ export function beginCriticalOperation(): () => void {
 }
 
 export function criticalOperationActive(): boolean {
-  return activeOperations > 0;
+  return (
+    activeOperations > 0 ||
+    (typeof document !== "undefined" &&
+      document.querySelector('[data-pwa-critical-operation="true"]') !== null)
+  );
 }
 
 export const CRITICAL_OPERATION_EVENT = EVENT_NAME;

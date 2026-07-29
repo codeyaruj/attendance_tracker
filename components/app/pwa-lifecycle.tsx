@@ -2,18 +2,16 @@
 
 import { Download, RefreshCw, X } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { attendSafeRepository } from "@/db";
 import { useAppInstall } from "@/hooks/use-app-install";
-import { criticalOperationActive } from "@/lib/pwa/critical-operation";
+import { usePwaUpdate } from "@/hooks/use-pwa-update";
 
 export function PwaLifecycle() {
   const pathname = usePathname();
-  const [waiting, setWaiting] = useState<ServiceWorker>();
   const [desktopViewport, setDesktopViewport] = useState(false);
+  const pwaUpdate = usePwaUpdate();
   const {
     method,
     outcome,
@@ -21,8 +19,6 @@ export function PwaLifecycle() {
     promptNativeInstall,
     dismissPromotion,
   } = useAppInstall();
-  const reloading = useRef(false);
-
   useEffect(() => {
     const query = window.matchMedia("(min-width: 1024px)");
     const syncViewport = () => setDesktopViewport(query.matches);
@@ -32,77 +28,13 @@ export function PwaLifecycle() {
     return () => query.removeEventListener("change", syncViewport);
   }, []);
 
-  useEffect(() => {
-    if (
-      process.env.NODE_ENV !== "production" ||
-      !("serviceWorker" in navigator)
-    ) {
-      return;
-    }
-
-    let disposed = false;
-    let registration: ServiceWorkerRegistration | undefined;
-    const findWaiting = () => {
-      if (!disposed && registration?.waiting) setWaiting(registration.waiting);
-    };
-    const controllerChanged = () => {
-      if (reloading.current) return;
-      reloading.current = true;
-      window.location.reload();
-    };
-    navigator.serviceWorker.addEventListener(
-      "controllerchange",
-      controllerChanged,
-    );
-    void navigator.serviceWorker
-      .register("/sw.js", { scope: "/", updateViaCache: "none" })
-      .then((nextRegistration) => {
-        registration = nextRegistration;
-        findWaiting();
-        nextRegistration.addEventListener("updatefound", () => {
-          const installing = nextRegistration.installing;
-          installing?.addEventListener("statechange", () => {
-            if (
-              installing.state === "installed" &&
-              navigator.serviceWorker.controller
-            ) {
-              findWaiting();
-            }
-          });
-        });
-        return navigator.serviceWorker.ready;
-      })
-      .then(() => attendSafeRepository.updateSettings({ offlineReady: true }))
-      .catch(() => undefined);
-
-    return () => {
-      disposed = true;
-      navigator.serviceWorker.removeEventListener(
-        "controllerchange",
-        controllerChanged,
-      );
-    };
-  }, []);
-
-  const update = () => {
-    if (!waiting) return;
-    if (criticalOperationActive()) {
-      toast.warning(
-        "Finish the current OCR, backup, or recovery operation before updating.",
-      );
-      return;
-    }
-    reloading.current = false;
-    waiting.postMessage({ type: "SKIP_WAITING" });
-  };
-
   const onboardingActive = pathname === "/";
   const showInstall =
     desktopViewport &&
     method === "NATIVE" &&
     !promotionalDismissed &&
     !onboardingActive;
-  const showUpdate = Boolean(waiting) && !onboardingActive;
+  const showUpdate = pwaUpdate.promptVisible;
   if (!showUpdate && !showInstall) return null;
 
   return (
@@ -115,18 +47,35 @@ export function PwaLifecycle() {
         <div className="flex items-start gap-3">
           <RefreshCw className="text-primary mt-1 size-5 shrink-0" />
           <div className="min-w-0 flex-1">
-            <p className="font-bold">A new version is available.</p>
+            <p className="font-bold">
+              {pwaUpdate.phase === "activating"
+                ? "Updating AttendSafe…"
+                : pwaUpdate.phase === "error"
+                  ? "The update is still available."
+                  : "A new version is available."}
+            </p>
             <p className="text-muted-foreground mt-1 text-sm">
-              Update when you are not editing, scanning, or importing data.
+              {pwaUpdate.phase === "blocked"
+                ? "The update will continue after your current edit, scan, import, or backup finishes."
+                : pwaUpdate.phase === "error"
+                  ? "AttendSafe could not finish the update. Check your connection and try again; your local data is safe."
+                  : !pwaUpdate.online && !pwaUpdate.canActivateOffline
+                    ? "Reconnect to download the update. Your local data remains available."
+                    : "Update safely without clearing attendance or other local data."}
             </p>
             <div className="mt-3 flex gap-2">
-              <Button size="sm" onClick={update}>
-                Update now
+              <Button
+                size="sm"
+                disabled={pwaUpdate.phase === "activating"}
+                onClick={pwaUpdate.updateNow}
+              >
+                {pwaUpdate.phase === "activating" ? "Updating…" : "Update now"}
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => setWaiting(undefined)}
+                disabled={pwaUpdate.phase === "activating"}
+                onClick={pwaUpdate.updateLater}
               >
                 Later
               </Button>

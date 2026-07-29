@@ -8,11 +8,14 @@ export default defineConfig({
   workers: 1,
   reporter: [["list"]],
   use: {
-    ...devices["Desktop Chrome"],
     baseURL: "http://localhost:4173",
     serviceWorkers: "allow",
     trace: "retain-on-failure",
   },
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "mobile-chromium", use: { ...devices["Pixel 7"] } },
+  ],
   webServer: {
     command: "node scripts/serve-static.mjs out 4173",
     url: "http://localhost:4173",
